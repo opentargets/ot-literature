@@ -18,7 +18,7 @@ class PublicationIdLUT:
     """Class to parse publication id lookup table downloaded from http://ftp.ebi.ac.uk/pub/databases/pmc/DOI/PMID_PMCID_DOI.csv.gz"""
 
     @staticmethod
-    def _parser(df: DataFrame) -> DataFrame:
+    def _lut_parser(df: DataFrame) -> DataFrame:
         """Parse the publication id lookup table.
 
         Args:
@@ -45,4 +45,4 @@ class PublicationIdLUT:
         Returns:
             DataFrame: DataFrame with the publication id lookup table.
         """
-        return cls._parser(session.spark.read.csv(csv_path, header=True))
+        return cls._lut_parser(session.spark.read.csv(csv_path, header=True))
