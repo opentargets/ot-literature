@@ -9,6 +9,7 @@ import pyspark.sql.functions as f
 
 from src.literature.common.schemas import parse_spark_schema
 from src.literature.dataset.dataset import Dataset
+from src.literature.method.nlp_pipeline import NLPPipeline
 
 if TYPE_CHECKING:
     from pyspark.sql import Column
@@ -51,4 +52,45 @@ class Entity(Dataset):
                 f.lit(entity_score).alias("entityScore"),
                 f.lit(nlp_pipeline_type).alias("nlpPipelineType")
             )
+        )
+
+    def normalise_entities(self: Entity) -> Entity:
+        """Normalise entities using NLP pipeline.
+
+        The output column selected is determined by the NLP pipeline type specified.
+        """
+        normalised_entities = NLPPipeline.apply_pipeline(self.df)
+
+        return Entity(
+            _df=(
+                normalised_entities
+                .withColumn(
+                    "entityLabelNormalised",
+                    f.when(
+                        f.col("nlpPipelineType") == "term",
+                        f.array_join(
+                            f.array_sort(
+                                f.filter(
+                                    f.array_distinct(f.col("finished_term")),
+                                    lambda c: c.isNotNull() & (c != "")
+                                )
+                            ),
+                            ""
+                        )
+                    ).when(
+                        f.col("nlpPipelineType") == "symbol",
+                        f.array_join(
+                            f.filter(
+                                f.col("finished_symbol"), 
+                                lambda c: c.isNotNull() & (c != "")
+                            ),
+                            ""
+                        )
+                    )
+                )
+                .drop("finished_term", "finished_symbol")
+                .filter(f.col("entityLabelNormalised").isNotNull() & (f.length(f.col("entityLabelNormalised")) > 0))
+                .distinct()
+            ),
+            _schema=Entity.get_schema()
         )

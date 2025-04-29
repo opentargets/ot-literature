@@ -35,6 +35,12 @@
             "type": "double",
             "nullable": true,
             "metadata": {}
+        },
+        {
+            "name": "entityLabelNormalised",
+            "type": "string",
+            "nullable": true,
+            "metadata": {}
         }
     ],
     "type": "struct"
