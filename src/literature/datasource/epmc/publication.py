@@ -7,9 +7,8 @@ from dataclasses import dataclass
 
 import pyspark.sql.functions as f
 
-from src.literature.common.session import Session
-
 from src.literature.common.schemas import parse_spark_schema
+from src.literature.common.session import Session
 from src.literature.dataset.publication import Publication
 
 
