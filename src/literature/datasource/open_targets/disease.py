@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import pyspark.sql.functions as f
@@ -18,7 +17,7 @@ class OpenTargetsDisease:
     """Class to process Open Targets disease index."""
 
     @staticmethod
-    def _extract_entities(disease_index: DataFrame) -> Entity:
+    def _extract_entities(disease_index: DataFrame) -> DataFrame:
         """Process the Open Targets disease index to extract disease entities.
         
         Args:
@@ -27,82 +26,79 @@ class OpenTargetsDisease:
         Returns:
             Entity: Extracted disease entities.
         """
-        return Entity(
-            _df=(
-                disease_index
-                # select relevant fields
-                .select(
-                    f.col("id").alias("entityId"), 
-                    f.col("name"), 
-                    f.col("synonyms.*")
+        return (
+            disease_index
+            # select relevant fields
+            .select(
+                f.col("id").alias("entityId"), 
+                f.col("name"), 
+                f.col("synonyms.*")
+            )
+            # annotate entity with score and nlpPipelineType
+            .withColumn(
+                "name", 
+                Entity.annotate_entity(
+                    f.array(f.col("name")), 
+                    f.lit(1.0), 
+                    f.lit("term")
                 )
-                # annotate entity with score and nlpPipelineType
-                .withColumn(
-                    "name", 
-                    Entity.annotate_entity(
-                        f.array(f.col("name")), 
-                        f.lit(1.0), 
-                        f.lit("term")
-                    )
+            )
+            .withColumn(
+                "exactSynonyms", 
+                Entity.annotate_entity(
+                    f.col("hasExactSynonym"), 
+                    f.lit(0.999), 
+                    f.lit("term")
                 )
-                .withColumn(
-                    "exactSynonyms", 
-                    Entity.annotate_entity(
-                        f.col("hasExactSynonym"), 
-                        f.lit(0.999), 
-                        f.lit("term")
-                    )
+            )
+            .withColumn(
+                "narrowSynonyms", 
+                Entity.annotate_entity(
+                    f.col("hasNarrowSynonym"), 
+                    f.lit(0.998), 
+                    f.lit("term")
                 )
-                .withColumn(
-                    "narrowSynonyms", 
-                    Entity.annotate_entity(
-                        f.col("hasNarrowSynonym"), 
-                        f.lit(0.998), 
-                        f.lit("term")
-                    )
+            )
+            .withColumn(
+                "broadSynonyms", 
+                Entity.annotate_entity(
+                    f.col("hasBroadSynonym"), 
+                    f.lit(0.997), 
+                    f.lit("term")
                 )
-                .withColumn(
-                    "broadSynonyms", 
-                    Entity.annotate_entity(
-                        f.col("hasBroadSynonym"), 
-                        f.lit(0.997), 
-                        f.lit("term")
-                    )
+            )
+            .withColumn(
+                "relatedSynonyms", 
+                Entity.annotate_entity(
+                    f.col("hasRelatedSynonym"), 
+                    f.lit(0.996), 
+                    f.lit("term")
                 )
-                .withColumn(
-                    "relatedSynonyms", 
-                    Entity.annotate_entity(
-                        f.col("hasRelatedSynonym"), 
-                        f.lit(0.996), 
-                        f.lit("term")
-                    )
-                )
-                # flatten and explode array of structs
-                .withColumn(
-                    "entity",
-                    f.explode(
-                        f.flatten(
-                            f.array(
-                                f.col("name"),
-                                f.col("broadSynonyms"),
-                                f.col("exactSynonyms"),
-                                f.col("narrowSynonyms"),
-                                f.col("relatedSynonyms")
-                            )
+            )
+            # flatten and explode array of structs
+            .withColumn(
+                "entity",
+                f.explode(
+                    f.flatten(
+                        f.array(
+                            f.col("name"),
+                            f.col("broadSynonyms"),
+                            f.col("exactSynonyms"),
+                            f.col("narrowSynonyms"),
+                            f.col("relatedSynonyms")
                         )
                     )
                 )
-                # select relevant fields
-                .select(
-                    f.col("entityId"),
-                    f.col("entity.entityLabel").alias("entityLabel"),
-                    f.col("entity.entityScore").alias("entityScore"),
-                    f.col("entity.nlpPipelineType").alias("nlpPipelineType")
-                )
-                .filter((f.col("entityLabel").isNotNull()) & (f.length(f.col("entityLabel")) > 0))
-                .distinct()
-            ),
-            _schema=Entity.get_schema()
+            )
+            # select relevant fields
+            .select(
+                f.col("entityId"),
+                f.col("entity.entityLabel").alias("entityLabel"),
+                f.col("entity.entityScore").alias("entityScore"),
+                f.col("entity.nlpPipelineType").alias("nlpPipelineType")
+            )
+            .filter((f.col("entityLabel").isNotNull()) & (f.length(f.col("entityLabel")) > 0))
+            .distinct()
         )
 
     @classmethod
@@ -110,7 +106,7 @@ class OpenTargetsDisease:
         cls: type[OpenTargetsDisease], 
         session: Session, 
         disease_index_path: str
-    ) -> Entity:
+    ) -> DataFrame:
         """Get disease entities from the Open Targets disease index.
 
         Args:
