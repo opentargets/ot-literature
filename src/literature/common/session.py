@@ -22,11 +22,15 @@ class Session:
                 app_name (str): Spark application name. Defaults to "ot-literature".
                 for_nlp (bool): Whether session is used for sparknlp. Defaults to False.
         """
-        config=SparkConf()
+        config=(
+            SparkConf()
+            .set("spark.driver.memory", "2g")
+        )
 
         if for_nlp:
             config = (
                 SparkConf()
+                .set("spark.driver.memory", "2g")
                 .set("spark.jars.packages", "com.johnsnowlabs.nlp:spark-nlp_2.12:5.0.0")
             )
 

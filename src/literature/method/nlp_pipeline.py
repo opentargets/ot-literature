@@ -13,7 +13,6 @@ if TYPE_CHECKING:
     from pyspark.sql import DataFrame
 
 
-@dataclass
 class NLPPipeline:
     """Class for generating and applying the NLP pipeline for normalising entities."""
 

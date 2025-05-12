@@ -13,7 +13,6 @@ if TYPE_CHECKING:
     from pyspark.sql import DataFrame
 
 
-@dataclass
 class PublicationIdLUT:
     """Class to parse publication id lookup table downloaded from http://ftp.ebi.ac.uk/pub/databases/pmc/DOI/PMID_PMCID_DOI.csv.gz"""
 

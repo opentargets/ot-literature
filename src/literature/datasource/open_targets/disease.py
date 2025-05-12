@@ -14,7 +14,6 @@ if TYPE_CHECKING:
     from pyspark.sql import DataFrame
 
 
-@dataclass
 class OpenTargetsDisease:
     """Class to process Open Targets disease index."""
 
