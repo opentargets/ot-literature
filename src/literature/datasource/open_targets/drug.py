@@ -100,13 +100,15 @@ class OpenTargetsDrug:
                     )
                 )
             )
-            # select relevant fields
+            # select relevant fields and specify entity type
             .select(
                 f.col("entityId"),
                 f.col("entity.entityLabel").alias("entityLabel"),
                 f.col("entity.entityScore").alias("entityScore"),
-                f.col("entity.nlpPipelineType").alias("nlpPipelineType")
+                f.col("entity.nlpPipelineType").alias("nlpPipelineType"),
+                f.lit("CD").alias("entityType")
             )
+            # cleanup
             .filter((f.col("entityLabel").isNotNull()) & (f.length(f.col("entityLabel")) > 0))
             .distinct()
         )
