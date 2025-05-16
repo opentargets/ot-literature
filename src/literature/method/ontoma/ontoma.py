@@ -6,6 +6,8 @@ from dataclasses import dataclass, field
 from functools import reduce
 from typing import TYPE_CHECKING
 
+import pyspark.sql.functions as f
+
 from src.literature.dataset.entity import Entity
 from src.literature.datasource.open_targets.disease import OpenTargetsDisease
 from src.literature.datasource.open_targets.target import OpenTargetsTarget
@@ -94,3 +96,37 @@ class OnToma:
             return lut_list[0]
         
         return reduce(lambda lut1, lut2: lut1.unionByName(lut2), lut_list)
+
+    def map_entities(
+            self: OnToma, 
+            df: DataFrame, 
+            label_col_name: str, 
+            type_col_name: str, 
+            result_col_name: str
+     ) -> DataFrame:
+        """Map entities using the entity lookup table.
+
+        Args:
+            df (DataFrame): DataFrame containing entity labels to be mapped.
+            label_col_name (str): Name of the column containing the entity labels.
+            type_col_name (str): Name of the column containing the type of the entity label.
+            result_col_name (str): Name of the column for the result.
+
+        Returns:
+            DataFrame: DataFrame with additional column containing a list of relevant entity ids for each entity label.
+        """
+        return (
+            Entity.normalise_entities(df)
+            .join(
+                (
+                    self.df
+                    .select(
+                        f.col("entityLabelNormalised").alias(label_col_name),
+                        f.col("entityType").alias(type_col_name),
+                        f.col("entityIds").alias(result_col_name)
+                    )
+                ),
+                on=[label_col_name, type_col_name],
+                how="left"
+            )
+        )
