@@ -7,13 +7,14 @@ from functools import reduce
 from typing import TYPE_CHECKING
 
 import pyspark.sql.functions as f
+from pyspark.sql import Window
 
 from src.literature.method.ontoma.index_parsers import (
     extract_disease_entities,
     extract_target_entities,
     extract_drug_entities
 )
-from src.literature.dataset.entity import Entity
+from src.literature.method.nlp_pipeline import NLPPipeline
 
 if TYPE_CHECKING:
     from pyspark.sql import DataFrame
@@ -51,10 +52,10 @@ class OnToma:
         self._entity_lut = self._concatenate_entity_luts(entity_luts)
 
         # normalise the entity lookup table using an NLP pipeline
-        self._entity_lut = Entity.normalise_entities(self._entity_lut)
+        self._entity_lut = self._normalise_entities(self._entity_lut)
 
         # post-processing to get relevant entity ids for each entity label
-        self._entity_lut = Entity.get_relevant_entity_ids(self._entity_lut)
+        self._entity_lut = self._get_relevant_entity_ids(self._entity_lut)
 
     @property
     def df(self: OnToma) -> DataFrame:
@@ -99,6 +100,70 @@ class OnToma:
         
         return reduce(lambda lut1, lut2: lut1.unionByName(lut2), lut_list)
 
+    def _normalise_entities(df: DataFrame) -> DataFrame:
+        """Normalise entities using NLP pipeline.
+
+        The output column selected is determined by the NLP pipeline type specified.
+
+        Args:
+            df (DataFrame): DataFrame containing entity labels to be normalised.
+
+        Returns:
+            DataFrame: DataFrame with additional column containing normalised entity labels.
+        """
+        normalised_entities = NLPPipeline.apply_pipeline(df)
+
+        return (
+            normalised_entities
+            .withColumn(
+                "entityLabelNormalised",
+                f.when(
+                    f.col("nlpPipelineType") == "term",
+                    f.array_join(
+                        f.array_sort(
+                            f.filter(
+                                f.array_distinct(f.col("finished_term")),
+                                lambda c: c.isNotNull() & (c != "")
+                            )
+                        ),
+                        ""
+                    )
+                ).when(
+                    f.col("nlpPipelineType") == "symbol",
+                    f.array_join(
+                        f.filter(
+                            f.col("finished_symbol"), 
+                            lambda c: c.isNotNull() & (c != "")
+                        ),
+                        ""
+                    )
+                )
+            )
+            .drop("finished_term", "finished_symbol")
+            .filter(f.col("entityLabelNormalised").isNotNull() & (f.length(f.col("entityLabelNormalised")) > 0))
+            .distinct()
+        )
+    
+    def _get_relevant_entity_ids(df: DataFrame) -> DataFrame:
+        """Get relevant entity ids for each entity label.
+
+        Args:
+            df (DataFrame): DataFrame containing all entity ids for each entity label.
+
+        Returns:
+            DataFrame: DataFrame containing only the relevant entity ids for each entity label.
+
+        """
+        w = Window.partitionBy("entityType", "entityLabelNormalised").orderBy(f.col("entityScore").desc())
+
+        return (
+            df
+            .withColumn("entityRank", f.dense_rank().over(w))
+            .filter(f.col("entityRank") == 1)
+            .groupBy(f.col("entityType"), f.col("entityLabelNormalised"))
+            .agg(f.collect_set(f.col("entityId")).alias("entityIds"))
+        )
+
     def map_entities(
             self: OnToma, 
             df: DataFrame, 
@@ -118,7 +183,7 @@ class OnToma:
             DataFrame: DataFrame with additional column containing a list of relevant entity ids for each entity label.
         """
         return (
-            Entity.normalise_entities(df)
+            self._normalise_entities(df)
             .join(
                 (
                     self.df
