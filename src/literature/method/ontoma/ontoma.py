@@ -8,10 +8,12 @@ from typing import TYPE_CHECKING
 
 import pyspark.sql.functions as f
 
+from src.literature.method.ontoma.index_parsers import (
+    extract_disease_entities,
+    extract_target_entities,
+    extract_drug_entities
+)
 from src.literature.dataset.entity import Entity
-from src.literature.datasource.open_targets.disease import OpenTargetsDisease
-from src.literature.datasource.open_targets.target import OpenTargetsTarget
-from src.literature.datasource.open_targets.drug import OpenTargetsDrug
 
 if TYPE_CHECKING:
     from pyspark.sql import DataFrame
@@ -42,7 +44,7 @@ class OnToma:
         ):
             raise ValueError("At least one index must be provided.")
     
-        # extract entities to generate entity lookup tables using index-specific methods
+        # extract entities to generate entity lookup tables using index-specific functions
         entity_luts = self._extract_entities()
 
         # concatenate entity lookup tables for downstream processing
@@ -64,21 +66,21 @@ class OnToma:
         return self._entity_lut
         
     def _extract_entities(self: OnToma) -> list[DataFrame]:
-        """Extract entities to generate entity lookup tables using methods specific for each index.
+        """Extract entities to generate entity lookup tables using functions specific for each index.
 
         Returns:
             list[DataFrame]: List of entity lookup tables containing extracted entities.
         """
-        # specify method to be used for each index
-        index_method_dict = {
-            "disease_index": (self.disease_index, OpenTargetsDisease._extract_entities),
-            "target_index": (self.target_index, OpenTargetsTarget._extract_entities),
-            "drug_index": (self.drug_index, OpenTargetsDrug._extract_entities)
+        # specify function to be used for each index
+        index_function_dict = {
+            "disease_index": (self.disease_index, extract_disease_entities),
+            "target_index": (self.target_index, extract_target_entities),
+            "drug_index": (self.drug_index, extract_drug_entities)
         }
 
         return [
-            method(index) 
-            for name, (index, method) in index_method_dict.items() 
+            function(index) 
+            for name, (index, function) in index_function_dict.items() 
             if index is not None
         ]
     
