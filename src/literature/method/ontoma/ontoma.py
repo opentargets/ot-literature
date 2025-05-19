@@ -14,7 +14,7 @@ from src.literature.method.ontoma.index_parsers import (
     extract_target_entities,
     extract_drug_entities
 )
-from src.literature.method.nlp_pipeline import NLPPipeline
+from src.literature.method.ontoma.nlp_pipeline import NLPPipeline
 
 if TYPE_CHECKING:
     from pyspark.sql import DataFrame
