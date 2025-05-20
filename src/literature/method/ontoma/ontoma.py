@@ -46,7 +46,7 @@ class OnToma:
             raise ValueError("At least one index must be provided.")
     
         # extract entities to generate entity lookup tables using index-specific functions
-        entity_luts = self._extract_entities()
+        entity_luts = self._extract_index_entities()
 
         # concatenate entity lookup tables for downstream processing
         self._entity_lut = self._concatenate_entity_luts(entity_luts)
@@ -66,7 +66,7 @@ class OnToma:
         """
         return self._entity_lut
         
-    def _extract_entities(self: OnToma) -> list[DataFrame]:
+    def _extract_index_entities(self: OnToma) -> list[DataFrame]:
         """Extract entities to generate entity lookup tables using functions specific for each index.
 
         Returns:
@@ -139,7 +139,7 @@ class OnToma:
                     )
                 )
             )
-            .drop("finished_term", "finished_symbol")
+            .drop("finished_term", "finished_symbol", "nlpPipelineType", "entityLabel")
             .filter(f.col("entityLabelNormalised").isNotNull() & (f.length(f.col("entityLabelNormalised")) > 0))
             .distinct()
         )
@@ -163,6 +163,36 @@ class OnToma:
             .groupBy(f.col("entityType"), f.col("entityLabelNormalised"))
             .agg(f.collect_set(f.col("entityId")).alias("entityIds"))
         )
+    
+    def _extract_input_entities(
+            df: DataFrame,
+            label_col_name: str
+        ) -> DataFrame:
+        """Extract entities from the provided dataframe.
+
+        Args:
+            df (DataFrame): DataFrame containing entity labels to be extracted.
+            label_col_name (str): Name of the column containing the entity labels.
+        
+        Returns:
+            DataFrame: DataFrame with additional columns containing entity label and NLP pipeline track.
+        """
+        return (
+            df
+            .withColumns(
+                {
+                    # convert greek alphabet to english alphabet
+                    # https://www.rapidtables.com/math/symbols/greek_alphabet.html
+                    "entityLabel": f.translate(
+                        f.col(label_col_name), 
+                        "αβγδεζηικλμνξπτυω", 
+                        "abgdezhiklmnxptuo"
+                    ),
+                    # all input entities will be processed using both the term and symbol tracks of the nlp pipeline
+                    "nlpPipelineType": f.explode(f.array(f.lit("term"), f.lit("symbol")))
+                }
+            )
+        )
 
     def map_entities(
             self: OnToma, 
@@ -173,6 +203,8 @@ class OnToma:
      ) -> DataFrame:
         """Map entities using the entity lookup table.
 
+        Entities are extracted and normalised before being mapped.
+
         Args:
             df (DataFrame): DataFrame containing entity labels to be mapped.
             label_col_name (str): Name of the column containing the entity labels.
@@ -180,20 +212,22 @@ class OnToma:
             result_col_name (str): Name of the column for the result.
 
         Returns:
-            DataFrame: DataFrame with additional column containing a list of relevant entity ids for each entity label.
+            DataFrame: DataFrame with additional columns containing a list of relevant entity ids for each entity label and the normalised entity label.
         """
+        extracted_entities = self._extract_input_entities(df, label_col_name)
+
         return (
-            self._normalise_entities(df)
+            self._normalise_entities(extracted_entities)
             .join(
                 (
                     self.df
                     .select(
-                        f.col("entityLabelNormalised").alias(label_col_name),
+                        f.col("entityLabelNormalised"),
                         f.col("entityType").alias(type_col_name),
                         f.col("entityIds").alias(result_col_name)
                     )
                 ),
-                on=[label_col_name, type_col_name],
+                on=["entityLabelNormalised", type_col_name],
                 how="left"
             )
         )
