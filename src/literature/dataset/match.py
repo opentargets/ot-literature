@@ -55,14 +55,14 @@ class Match(Dataset):
                         "abgdezhiklmnxptuo"
                     )
                 )
-                # create array of structs depending on nlpPipelineType
+                # create array of structs depending on nlpPipelineTrack
                 .withColumn(
                     "entities",
                     f.when(f.col("entityType") == "DS",
                         f.array(
                             f.struct(
                                 f.col("entityLabelTranslated").alias("entityLabel"), 
-                                f.lit("term").alias("nlpPipelineType")
+                                f.lit("term").alias("nlpPipelineTrack")
                             )
                         )
                     )
@@ -70,11 +70,11 @@ class Match(Dataset):
                         f.array(
                             f.struct(
                                 f.col("entityLabelTranslated").alias("entityLabel"), 
-                                f.lit("term").alias("nlpPipelineType")
+                                f.lit("term").alias("nlpPipelineTrack")
                             ),
                             f.struct(
                                 f.col("entityLabelTranslated").alias("entityLabel"), 
-                                f.lit("symbol").alias("nlpPipelineType")
+                                f.lit("symbol").alias("nlpPipelineTrack")
                             )
                         )
                     )
@@ -84,7 +84,7 @@ class Match(Dataset):
                     f.col("entityLabelFromSource"), 
                     f.col("entityType"), 
                     f.col("entity.entityLabel").alias("entityLabel"),
-                    f.col("entity.nlpPipelineType").alias("nlpPipelineType")
+                    f.col("entity.nlpPipelineTrack").alias("nlpPipelineTrack")
                 )
             ),
             _schema=Entity.get_schema()

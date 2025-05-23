@@ -100,6 +100,7 @@ class OnToma:
         
         return reduce(lambda lut1, lut2: lut1.unionByName(lut2), lut_list)
 
+    @staticmethod
     def _normalise_entities(df: DataFrame) -> DataFrame:
         """Normalise entities using NLP pipeline.
 
@@ -111,14 +112,14 @@ class OnToma:
         Returns:
             DataFrame: DataFrame with additional column containing normalised entity labels.
         """
-        normalised_entities = NLPPipeline.apply_pipeline(df)
+        normalised_entities = NLPPipeline.apply_pipeline(df, "entityLabel")
 
         return (
             normalised_entities
             .withColumn(
                 "entityLabelNormalised",
                 f.when(
-                    f.col("nlpPipelineType") == "term",
+                    f.col("nlpPipelineTrack") == "term",
                     f.array_join(
                         f.array_sort(
                             f.filter(
@@ -129,7 +130,7 @@ class OnToma:
                         ""
                     )
                 ).when(
-                    f.col("nlpPipelineType") == "symbol",
+                    f.col("nlpPipelineTrack") == "symbol",
                     f.array_join(
                         f.filter(
                             f.col("finished_symbol"), 
@@ -139,11 +140,12 @@ class OnToma:
                     )
                 )
             )
-            .drop("finished_term", "finished_symbol", "nlpPipelineType", "entityLabel")
+            .drop("finished_term", "finished_symbol", "nlpPipelineTrack", "entityLabel")
             .filter(f.col("entityLabelNormalised").isNotNull() & (f.length(f.col("entityLabelNormalised")) > 0))
             .distinct()
         )
     
+    @staticmethod
     def _get_relevant_entity_ids(df: DataFrame) -> DataFrame:
         """Get relevant entity ids for each entity label.
 
@@ -164,6 +166,7 @@ class OnToma:
             .agg(f.collect_set(f.col("entityId")).alias("entityIds"))
         )
     
+    @staticmethod
     def _extract_input_entities(
             df: DataFrame,
             label_col_name: str
@@ -189,7 +192,7 @@ class OnToma:
                         "abgdezhiklmnxptuo"
                     ),
                     # all input entities will be processed using both the term and symbol tracks of the nlp pipeline
-                    "nlpPipelineType": f.explode(f.array(f.lit("term"), f.lit("symbol")))
+                    "nlpPipelineTrack": f.explode(f.array(f.lit("term"), f.lit("symbol")))
                 }
             )
         )

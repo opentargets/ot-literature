@@ -16,13 +16,13 @@ __all__ = [
 ]
 
 
-def _annotate_entity(c: Column, entity_score: float, nlp_pipeline_type: str) -> Column:
+def _annotate_entity(c: Column, entity_score: float, nlp_pipeline_track: str) -> Column:
     """Annotate entity with score and the NLP pipeline to be processed with.
     
     Args:
         c (Column): Column containing entity label.
         entity_score (float): Score of the entity.
-        nlp_pipeline_type (str): NLP pipeline type to be used.
+        nlp_pipeline_track (str): NLP pipeline track to be used.
     
     Returns:
         Column: Column of struct of annotated entities.
@@ -33,7 +33,7 @@ def _annotate_entity(c: Column, entity_score: float, nlp_pipeline_type: str) -> 
         lambda x: f.struct(
             x.alias("entityLabel"),
             f.lit(entity_score).alias("entityScore"),
-            f.lit(nlp_pipeline_type).alias("nlpPipelineType")
+            f.lit(nlp_pipeline_track).alias("nlpPipelineTrack")
         )
     )
 
@@ -54,7 +54,7 @@ def extract_disease_entities(disease_index: DataFrame) -> DataFrame:
             f.col("name"), 
             f.col("synonyms.*")
         )
-        # annotate entity with score and nlpPipelineType
+        # annotate entity with score and nlpPipelineTrack
         .withColumn(
             "name", 
             _annotate_entity(
@@ -115,7 +115,7 @@ def extract_disease_entities(disease_index: DataFrame) -> DataFrame:
             f.col("entityId"),
             f.col("entity.entityLabel").alias("entityLabel"),
             f.col("entity.entityScore").alias("entityScore"),
-            f.col("entity.nlpPipelineType").alias("nlpPipelineType"),
+            f.col("entity.nlpPipelineTrack").alias("nlpPipelineTrack"),
             f.lit("DS").alias("entityType")
         )
         # cleanup
@@ -145,7 +145,7 @@ def extract_target_entities(target_index: DataFrame) -> DataFrame:
             f.col("obsoleteSymbols.label").alias("obsoleteSymbols"),
             f.col("proteinIds.id").alias("proteinIds")
         )
-        # annotate entity with score and nlpPipelineType
+        # annotate entity with score and nlpPipelineTrack
         .withColumn(
             "name", 
             _annotate_entity(
@@ -224,7 +224,7 @@ def extract_target_entities(target_index: DataFrame) -> DataFrame:
             f.col("entityId"), 
             f.col("entity.entityLabel").alias("entityLabel"), 
             f.col("entity.entityScore").alias("entityScore"), 
-            f.col("entity.nlpPipelineType").alias("nlpPipelineType"),
+            f.col("entity.nlpPipelineTrack").alias("nlpPipelineTrack"),
             f.lit("GP").alias("entityType")
         )
         # cleanup
@@ -250,7 +250,7 @@ def extract_drug_entities(drug_index: DataFrame) -> DataFrame:
             f.col("tradeNames"),
             f.col("synonyms")
         )
-        # annotate entity with score and nlpPipelineType
+        # annotate entity with score and nlpPipelineTrack
         .withColumn(
             "nameTerm", 
             _annotate_entity(
@@ -320,7 +320,7 @@ def extract_drug_entities(drug_index: DataFrame) -> DataFrame:
             f.col("entityId"),
             f.col("entity.entityLabel").alias("entityLabel"),
             f.col("entity.entityScore").alias("entityScore"),
-            f.col("entity.nlpPipelineType").alias("nlpPipelineType"),
+            f.col("entity.nlpPipelineTrack").alias("nlpPipelineTrack"),
             f.lit("CD").alias("entityType")
         )
         # cleanup

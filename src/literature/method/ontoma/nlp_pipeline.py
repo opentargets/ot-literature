@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from sparknlp.base import DocumentAssembler, Finisher
@@ -34,8 +33,8 @@ class NLPPipeline:
     @classmethod
     def generate_pipeline(
         cls: type[NLPPipeline],
-        input_col: str, 
-        cols_for_output: list[str]
+        input_col_name: str, 
+        output_col_names: list[str]
     ) -> Pipeline:
         """Generate NLP pipeline for normalising entities.
 
@@ -44,15 +43,15 @@ class NLPPipeline:
         2. document -> tokenSymbol -> symbol
         
         Args:
-            input_col (str): Column to take as input.
-            cols_for_output (list[str]): Columns to be processed for output.
+            input_col_name (str): Name of the column to process as input.
+            output_col_names (list[str]): Names of the columns to be processed for output.
 
         Returns:
             Pipeline: NLP pipeline.
         """
         document_assembler = (
             DocumentAssembler()
-            .setInputCol(input_col)
+            .setInputCol(input_col_name)
             .setOutputCol("document")
         )
 
@@ -108,7 +107,7 @@ class NLPPipeline:
 
         finisher = (
             Finisher()
-            .setInputCols(cols_for_output)
+            .setInputCols(output_col_names)
             .setIncludeMetadata(False)
         )
 
@@ -126,15 +125,20 @@ class NLPPipeline:
         return pipeline
     
     @classmethod
-    def apply_pipeline(cls: type[NLPPipeline], df: DataFrame) -> DataFrame:
+    def apply_pipeline(
+        cls: type[NLPPipeline], 
+        df: DataFrame, 
+        input_col_name: str
+    ) -> DataFrame:
         """Apply a generated NLP pipeline for normalising entities.
 
         Args:
             df (DataFrame): DataFrame of entities to be normalised.
+            input_col_name (str): Name of the column to process as input.
 
         Returns:
             DataFrame: DataFrame of normalised entities.
         """
-        pipeline = cls.generate_pipeline("entityLabel", ["term", "symbol"])
+        pipeline = cls.generate_pipeline(input_col_name, ["term", "symbol"])
 
         return pipeline.fit(df).transform(df)
