@@ -48,52 +48,59 @@ def extract_disease_entities(disease_index: DataFrame) -> DataFrame:
     """
     return (
         disease_index
-        # select relevant fields
+        # extract entities from relevant fields and annotate entity with score and nlpPipelineTrack
         .select(
-            f.col("id").alias("entityId"), 
-            f.col("name"), 
-            f.col("synonyms.*")
-        )
-        # annotate entity with score and nlpPipelineTrack
-        .withColumn(
-            "name", 
+            f.col("id").alias("entityId"),
             _annotate_entity(
                 f.array(f.col("name")), 
                 f.lit(1.0), 
                 f.lit("term")
-            )
-        )
-        .withColumn(
-            "exactSynonyms", 
+            ).alias("nameTerm"),
             _annotate_entity(
-                f.col("hasExactSynonym"), 
+                f.array(f.col("name")), 
+                f.lit(1.0), 
+                f.lit("symbol")
+            ).alias("nameSymbol"),
+            _annotate_entity(
+                f.col("synonyms.hasExactSynonym"), 
                 f.lit(0.999), 
                 f.lit("term")
-            )
-        )
-        .withColumn(
-            "narrowSynonyms", 
+            ).alias("exactSynonymsTerm"),
             _annotate_entity(
-                f.col("hasNarrowSynonym"), 
+                f.col("synonyms.hasExactSynonym"), 
+                f.lit(0.999), 
+                f.lit("symbol")
+            ).alias("exactSynonymsSymbol"),
+            _annotate_entity(
+                f.col("synonyms.hasNarrowSynonym"), 
                 f.lit(0.998), 
                 f.lit("term")
-            )
-        )
-        .withColumn(
-            "broadSynonyms", 
+            ).alias("narrowSynonymsTerm"),
             _annotate_entity(
-                f.col("hasBroadSynonym"), 
+                f.col("synonyms.hasNarrowSynonym"), 
+                f.lit(0.998), 
+                f.lit("symbol")
+            ).alias("narrowSynonymsSymbol"),
+            _annotate_entity(
+                f.col("synonyms.hasBroadSynonym"), 
                 f.lit(0.997), 
                 f.lit("term")
-            )
-        )
-        .withColumn(
-            "relatedSynonyms", 
+            ).alias("broadSynonymsTerm"),
             _annotate_entity(
-                f.col("hasRelatedSynonym"), 
+                f.col("synonyms.hasBroadSynonym"), 
+                f.lit(0.997), 
+                f.lit("symbol")
+            ).alias("broadSynonymsSymbol"),
+            _annotate_entity(
+                f.col("synonyms.hasRelatedSynonym"), 
                 f.lit(0.996), 
                 f.lit("term")
-            )
+            ).alias("relatedSynonymsTerm"),
+            _annotate_entity(
+                f.col("synonyms.hasRelatedSynonym"), 
+                f.lit(0.996), 
+                f.lit("symbol")
+            ).alias("relatedSynonymsSymbol")
         )
         # flatten and explode array of structs
         .withColumn(
@@ -101,11 +108,16 @@ def extract_disease_entities(disease_index: DataFrame) -> DataFrame:
             f.explode(
                 f.flatten(
                     f.array(
-                        f.col("name"),
-                        f.col("broadSynonyms"),
-                        f.col("exactSynonyms"),
-                        f.col("narrowSynonyms"),
-                        f.col("relatedSynonyms")
+                        f.col("nameTerm"),
+                        f.col("nameSymbol"),
+                        f.col("exactSynonymsTerm"),
+                        f.col("exactSynonymsSymbol"),
+                        f.col("narrowSynonymsTerm"),
+                        f.col("narrowSynonymsSymbol"),
+                        f.col("broadSynonymsTerm"),
+                        f.col("broadSynonymsSymbol"),
+                        f.col("relatedSynonymsTerm"),
+                        f.col("relatedSynonymsSymbol")
                     )
                 )
             )
@@ -134,73 +146,44 @@ def extract_target_entities(target_index: DataFrame) -> DataFrame:
     """
     return (
         target_index
-        # select relevant fields
+        # extract entities from relevant fields and annotate entity with score and nlpPipelineTrack
         .select(
             f.col("id").alias("entityId"),
-            f.col("approvedName").alias("name"),
-            f.col("approvedSymbol").alias("symbol"),
-            f.col("nameSynonyms.label").alias("nameSynonyms"),
-            f.col("symbolSynonyms.label").alias("symbolSynonyms"),
-            f.col("obsoleteNames.label").alias("obsoleteNames"),
-            f.col("obsoleteSymbols.label").alias("obsoleteSymbols"),
-            f.col("proteinIds.id").alias("proteinIds")
-        )
-        # annotate entity with score and nlpPipelineTrack
-        .withColumn(
-            "name", 
             _annotate_entity(
-                f.array(f.col("name")), 
+                f.array(f.col("approvedName")), 
                 f.lit(1.0), 
                 f.lit("term")
-            )
-        )
-        .withColumn(
-            "symbol", 
+            ).alias("name"),
             _annotate_entity(
-                f.array(f.col("symbol")), 
+                f.array(f.col("approvedSymbol")), 
                 f.lit(1.0), 
                 f.lit("symbol")
-            )
-        )
-        .withColumn(
-            "nameSynonyms", 
+            ).alias("symbol"),
             _annotate_entity(
-                f.col("nameSynonyms"), 
+                f.col("nameSynonyms.label"), 
                 f.lit(0.999), 
                 f.lit("term")
-            )
-        )
-        .withColumn(
-            "symbolSynonyms", 
+            ).alias("nameSynonyms"),
             _annotate_entity(
-                f.col("symbolSynonyms"), 
+                f.col("symbolSynonyms.label"), 
                 f.lit(0.999), 
                 f.lit("symbol")
-            )
-        )
-        .withColumn(
-            "proteinIds", 
+            ).alias("symbolSynonyms"),
             _annotate_entity(
-                f.col("proteinIds"), 
+                f.col("proteinIds.id"), 
                 f.lit(0.999), 
                 f.lit("symbol")
-            )
-        )
-        .withColumn(
-            "obsoleteNames", 
+            ).alias("proteinIds"),
             _annotate_entity(
-                f.col("obsoleteNames"), 
+                f.col("obsoleteNames.label"), 
                 f.lit(0.998), 
                 f.lit("term")
-            )
-        )
-        .withColumn(
-            "obsoleteSymbols", 
+            ).alias("obsoleteNames"),
             _annotate_entity(
-                f.col("obsoleteSymbols"), 
+                f.col("obsoleteSymbols.label"), 
                 f.lit(0.998), 
                 f.lit("symbol")
-            )
+            ).alias("obsoleteSymbols")
         )
         # flatten and explode array of structs
         .withColumn(
@@ -243,61 +226,39 @@ def extract_drug_entities(drug_index: DataFrame) -> DataFrame:
     """
     return (
         drug_index
-        # select relevant fields
+        # extract entities from relevant fields and annotate entity with score and nlpPipelineTrack
         .select(
             f.col("id").alias("entityId"),
-            f.col("name"),
-            f.col("tradeNames"),
-            f.col("synonyms")
-        )
-        # annotate entity with score and nlpPipelineTrack
-        .withColumn(
-            "nameTerm", 
             _annotate_entity(
-                f.array(f.col("name")), 
+                f.array(f.col("name")),
                 f.lit(1.0), 
                 f.lit("term")
-            )
-        )
-        .withColumn(
-            "nameSymbol", 
+            ).alias("nameTerm"),
             _annotate_entity(
-                f.array(f.col("name")), 
+                f.array(f.col("name")),
                 f.lit(1.0), 
                 f.lit("symbol")
-            )
-        )
-        .withColumn(
-            "tradeNamesTerm", 
+            ).alias("nameSymbol"),
             _annotate_entity(
-                f.col("tradeNames"), 
+                f.col("tradeNames"),
                 f.lit(0.999), 
                 f.lit("term")
-            )
-        )
-        .withColumn(
-            "tradeNamesSymbol", 
+            ).alias("tradeNamesTerm"),
             _annotate_entity(
-                f.col("tradeNames"), 
+                f.col("tradeNames"),
                 f.lit(0.999), 
                 f.lit("symbol")
-            )
-        )
-        .withColumn(
-            "synonymsTerm", 
+            ).alias("tradeNamesSymbol"),
             _annotate_entity(
-                f.col("synonyms"), 
+                f.col("synonyms"),
                 f.lit(0.999), 
                 f.lit("term")
-            )
-        )
-        .withColumn(
-            "synonymsSymbol", 
+            ).alias("synonymsTerm"),
             _annotate_entity(
-                f.col("synonyms"), 
+                f.col("synonyms"),
                 f.lit(0.999), 
                 f.lit("symbol")
-            )
+            ).alias("synonymsSymbol")
         )
         # flatten and explode array of structs
         .withColumn(
