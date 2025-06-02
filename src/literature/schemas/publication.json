@@ -121,12 +121,6 @@
         "type": "string",
         "nullable": true,
         "metadata": {}
-      },
-      {
-        "name": "int_timestamp",
-        "type": "long",
-        "nullable": true,
-        "metadata": {}
       }
     ],
     "type": "struct"

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import pyspark.sql.functions as f
@@ -38,10 +37,10 @@ class PublicationIdLUT:
         """Read publication id lookup table from csv.
 
         Args:
-            session (Session): Session object.
+            session (Session): Spark Session object.
             csv_path (str): Path to the publication id lookup table.
 
         Returns:
-            DataFrame: DataFrame with the publication id lookup table.
+            DataFrame: DataFrame with the parsed publication id lookup table.
         """
         return cls._lut_parser(session.spark.read.csv(csv_path, header=True))
