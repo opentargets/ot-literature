@@ -142,7 +142,6 @@ class OnToma:
             )
             .drop("finished_term", "finished_symbol", "nlpPipelineTrack", "entityLabel")
             .filter(f.col("entityLabelNormalised").isNotNull() & (f.length(f.col("entityLabelNormalised")) > 0))
-            .distinct()
         )
     
     @staticmethod
