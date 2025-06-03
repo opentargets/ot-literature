@@ -17,7 +17,7 @@ from src.literature.method.ontoma.index_parsers import (
 from src.literature.method.ontoma.nlp_pipeline import NLPPipeline
 
 if TYPE_CHECKING:
-    from pyspark.sql import DataFrame
+    from pyspark.sql import Column, DataFrame
 
 
 @dataclass
@@ -201,9 +201,10 @@ class OnToma:
     def map_entities(
             self: OnToma, 
             df: DataFrame, 
+            result_col_name: str,
             label_col_name: str, 
-            type_col_name: str, 
-            result_col_name: str
+            type_col_name: str | None = None, 
+            type_col: Column | None = None
      ) -> DataFrame:
         """Map entities using the entity lookup table.
 
@@ -215,13 +216,29 @@ class OnToma:
 
         Args:
             df (DataFrame): DataFrame containing entity labels to be mapped.
-            label_col_name (str): Name of the column containing the entity labels.
-            type_col_name (str): Name of the column containing the type of the entity label.
             result_col_name (str): Name of the column for the result.
+            label_col_name (str): Name of the column containing the entity labels.
+            type_col_name (str | None): Name of the column containing the type of the entity label.
+            type_col (Column | None): Column containing the type of the entity label.
 
         Returns:
             DataFrame: DataFrame with additional column containing a list of relevant entity ids for each entity label.
         """
+        # validate input for the type column
+        if (
+            (type_col_name is None and type_col is None) 
+            or (type_col_name is not None and type_col is not None)
+        ):
+            raise ValueError("Exactly one of 'type_col_name' or 'type_col' must be specified.")
+        
+        # create snapshot of columns from input dataframe
+        original_columns = df.columns
+        
+        # if type information is provided as a Column, add it to the input dataframe
+        if type_col is not None:
+            type_col_name = "entityType"
+            df = df.withColumn(type_col_name, type_col)
+    
         # extract entities from input dataframe
         extracted_entities = self._extract_input_entities(df, label_col_name)
 
@@ -245,7 +262,7 @@ class OnToma:
         # aggregate results from both tracks
         return (
             mapped_entities
-            .groupBy(df.columns)
+            .groupBy(original_columns)
             .agg(f.array_distinct(f.flatten(f.collect_set(f.col("entityIds")))).alias(result_col_name))
             # replace empty list with null
             .withColumn(
