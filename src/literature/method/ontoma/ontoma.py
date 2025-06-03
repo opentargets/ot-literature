@@ -35,7 +35,7 @@ class OnToma:
         Initialises an entity lookup table for mapping entities using the index(es) provided.
 
         Raises:
-            ValueError: If no index is provided.
+            ValueError: When no index is provided.
         """
         # validate the input
         if (
@@ -166,10 +166,32 @@ class OnToma:
         )
     
     @staticmethod
+    def _validate_entity_types(
+        lut: DataFrame, 
+        df: DataFrame, 
+        type_col_name: str
+    ) -> bool:
+        """Check if all the entity types in the provided dataframe are in the entity lookup table.
+
+        Args:
+            lut (DataFrame): The entity lookup table.
+            df (DataFrame): The provided dataframe.
+            type_col_name (str): Name of the column containing the entity types.
+
+        Returns:
+            bool: True if all the entity types are in the entity lookup table, False otherwise.
+        """
+        lut_types = lut.select("entityType").distinct().collect()
+
+        df_types = df.select(type_col_name).distinct().collect()
+
+        return all(val in lut_types for val in df_types)
+    
+    @staticmethod
     def _extract_input_entities(
-            df: DataFrame,
-            label_col_name: str
-        ) -> DataFrame:
+        df: DataFrame,
+        label_col_name: str
+    ) -> DataFrame:
         """Extract entities from the provided dataframe.
 
         Entities are set up for normalisation via both the term and symbol tracks of the nlp pipeline.
@@ -199,12 +221,12 @@ class OnToma:
         )
 
     def map_entities(
-            self: OnToma, 
-            df: DataFrame, 
-            result_col_name: str,
-            label_col_name: str, 
-            type_col_name: str | None = None, 
-            type_col: Column | None = None
+        self: OnToma, 
+        df: DataFrame, 
+        result_col_name: str,
+        label_col_name: str, 
+        type_col_name: str | None = None, 
+        type_col: Column | None = None
      ) -> DataFrame:
         """Map entities using the entity lookup table.
 
@@ -223,13 +245,17 @@ class OnToma:
 
         Returns:
             DataFrame: DataFrame with additional column containing a list of relevant entity ids for each entity label.
+        
+        Raises:
+            ValueError: When both or none of 'type_col_name' or 'type_col' are provided,
+                or when the input dataframe contains unmappable entity types.
         """
         # validate input for the type column
         if (
             (type_col_name is None and type_col is None) 
             or (type_col_name is not None and type_col is not None)
         ):
-            raise ValueError("Exactly one of 'type_col_name' or 'type_col' must be specified.")
+            raise ValueError("Exactly one of 'type_col_name' or 'type_col' must be provided.")
         
         # create snapshot of columns from input dataframe
         original_columns = df.columns
@@ -238,6 +264,10 @@ class OnToma:
         if type_col is not None:
             type_col_name = "entityType"
             df = df.withColumn(type_col_name, type_col)
+
+        # check if all the entity types to be mapped are in the entity lookup table
+        if not self._validate_entity_types(self.df, df, type_col_name):
+            raise ValueError("Unable to map the provided entity type(s).")
     
         # extract entities from input dataframe
         extracted_entities = self._extract_input_entities(df, label_col_name)
