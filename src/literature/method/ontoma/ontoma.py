@@ -141,7 +141,7 @@ class OnToma:
                 )
             )
             .drop("finished_term", "finished_symbol", "nlpPipelineTrack", "entityLabel")
-            .filter(f.col("entityLabelNormalised").isNotNull() & (f.length(f.col("entityLabelNormalised")) > 0))
+            .filter(f.col("entityLabelNormalised").isNotNull() & (f.length("entityLabelNormalised") > 0))
         )
     
     @staticmethod
@@ -172,6 +172,8 @@ class OnToma:
         ) -> DataFrame:
         """Extract entities from the provided dataframe.
 
+        Entities are set up for normalisation via both the term and symbol tracks of the nlp pipeline.
+
         Args:
             df (DataFrame): DataFrame containing entity labels to be extracted.
             label_col_name (str): Name of the column containing the entity labels.
@@ -190,7 +192,7 @@ class OnToma:
                         "αβγδεζηικλμνξπτυω", 
                         "abgdezhiklmnxptuo"
                     ),
-                    # all input entities will be processed using both the term and symbol tracks of the nlp pipeline
+                    # all input entities will be normalised using both the term and symbol tracks of the nlp pipeline
                     "nlpPipelineTrack": f.explode(f.array(f.lit("term"), f.lit("symbol")))
                 }
             )
@@ -205,7 +207,11 @@ class OnToma:
      ) -> DataFrame:
         """Map entities using the entity lookup table.
 
-        Entities are extracted and normalised before being mapped.
+        Logic:
+        1. Extract entities from input dataframe.
+        2. Normalise entities using both tracks of the NLP pipeline.
+        3. Join with entity lookup table.
+        4. Aggregate results from both tracks.
 
         Args:
             df (DataFrame): DataFrame containing entity labels to be mapped.
@@ -214,11 +220,13 @@ class OnToma:
             result_col_name (str): Name of the column for the result.
 
         Returns:
-            DataFrame: DataFrame with additional columns containing a list of relevant entity ids for each entity label and the normalised entity label.
+            DataFrame: DataFrame with additional column containing a list of relevant entity ids for each entity label.
         """
+        # extract entities from input dataframe
         extracted_entities = self._extract_input_entities(df, label_col_name)
 
-        return (
+        # normalise entities and join with entity lookup table
+        mapped_entities = (
             self._normalise_entities(extracted_entities)
             .join(
                 (
@@ -226,10 +234,23 @@ class OnToma:
                     .select(
                         f.col("entityLabelNormalised"),
                         f.col("entityType").alias(type_col_name),
-                        f.col("entityIds").alias(result_col_name)
+                        f.col("entityIds")
                     )
                 ),
                 on=["entityLabelNormalised", type_col_name],
                 how="left"
+            )
+        )
+
+        # aggregate results from both tracks
+        return (
+            mapped_entities
+            .groupBy(df.columns)
+            .agg(f.array_distinct(f.flatten(f.collect_set(f.col("entityIds")))).alias(result_col_name))
+            # replace empty list with null
+            .withColumn(
+                result_col_name,
+                f.when(f.size(result_col_name) == 0, None)
+                .otherwise(f.col(result_col_name))
             )
         )
