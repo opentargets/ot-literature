@@ -14,6 +14,10 @@ from src.literature.method.ontoma.index_parsers import (
     extract_target_entities,
     extract_drug_entities
 )
+from src.literature.method.ontoma.utils import (
+    translate_special_characters,
+    clean_disease_label
+)
 from src.literature.method.ontoma.nlp_pipeline import NLPPipeline
 
 if TYPE_CHECKING:
@@ -190,7 +194,8 @@ class OnToma:
     @staticmethod
     def _extract_input_entities(
         df: DataFrame,
-        label_col_name: str
+        label_col_name: str,
+        type_col_name: str,
     ) -> DataFrame:
         """Extract entities from the provided dataframe.
 
@@ -199,6 +204,7 @@ class OnToma:
         Args:
             df (DataFrame): DataFrame containing entity labels to be extracted.
             label_col_name (str): Name of the column containing the entity labels.
+            type_col_name (str): Name of the column containing the type of the entity label.
         
         Returns:
             DataFrame: DataFrame with additional columns containing entity label and NLP pipeline track.
@@ -209,14 +215,15 @@ class OnToma:
                 {
                     # convert greek alphabet to english alphabet
                     # https://www.rapidtables.com/math/symbols/greek_alphabet.html
-                    "entityLabel": f.translate(
-                        f.col(label_col_name), 
-                        "αβγδεζηικλμνξπτυω", 
-                        "abgdezhiklmnxptuo"
-                    ),
+                    "entityLabel": translate_special_characters(f.trim(f.col(label_col_name))),
                     # all input entities will be normalised using both the term and symbol tracks of the nlp pipeline
                     "nlpPipelineTrack": f.explode(f.array(f.lit("term"), f.lit("symbol")))
                 }
+            )
+            .withColumn(
+                "entityLabel",
+                f.when(f.col(type_col_name) == "DS", clean_disease_label(f.col("entityLabel")))
+                .otherwise(f.col("entityLabel"))
             )
         )
 
@@ -270,7 +277,7 @@ class OnToma:
             raise ValueError("Unable to map the provided entity type(s).")
     
         # extract entities from input dataframe
-        extracted_entities = self._extract_input_entities(df, label_col_name)
+        extracted_entities = self._extract_input_entities(df, label_col_name, type_col_name)
 
         # normalise entities and join with entity lookup table
         mapped_entities = (

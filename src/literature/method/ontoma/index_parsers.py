@@ -111,7 +111,11 @@ def extract_disease_entities(disease_index: DataFrame) -> DataFrame:
         # select relevant fields and specify entity type
         .select(
             f.col("entityId"),
-            f.col("entity.entityLabel").alias("entityLabel"),
+            translate_special_characters(
+                f.trim(
+                    f.col("entity.entityLabel")
+                )
+            ).alias("entityLabel"),
             f.col("entity.entityScore").alias("entityScore"),
             f.col("entity.nlpPipelineTrack").alias("nlpPipelineTrack"),
             f.lit("DS").alias("entityType")
@@ -177,7 +181,11 @@ def extract_target_entities(target_index: DataFrame) -> DataFrame:
         # select relevant fields and specify entity type
         .select(
             f.col("entityId"), 
-            f.col("entity.entityLabel").alias("entityLabel"), 
+            translate_special_characters(
+                f.trim(
+                    f.col("entity.entityLabel")
+                )
+            ).alias("entityLabel"),
             f.col("entity.entityScore").alias("entityScore"), 
             f.col("entity.nlpPipelineTrack").alias("nlpPipelineTrack"),
             f.lit("GP").alias("entityType")
@@ -239,7 +247,11 @@ def extract_drug_entities(drug_index: DataFrame) -> DataFrame:
         # select relevant fields and specify entity type
         .select(
             f.col("entityId"),
-            f.col("entity.entityLabel").alias("entityLabel"),
+            translate_special_characters(
+                f.trim(
+                    f.col("entity.entityLabel")
+                )
+            ).alias("entityLabel"),
             f.col("entity.entityScore").alias("entityScore"),
             f.col("entity.nlpPipelineTrack").alias("nlpPipelineTrack"),
             f.lit("CD").alias("entityType")
