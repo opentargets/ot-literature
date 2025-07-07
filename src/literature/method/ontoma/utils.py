@@ -41,9 +41,12 @@ def clean_disease_label(disease_label: Column) -> Column:
         Column: Column containing the disease label with prefixes removed.
     """
     return (
-        f.regexp_extract(
-            f.element_at(f.split(disease_label, "#"), -1), 
-            r'^(?:[A-Z]{1}[0-9]{2}[-.A-Z0-9]* |Chapter [IVX]+ )?(.+)$', 
-            1
-        )
+        f.when(
+            disease_label.contains("#"),
+            f.regexp_extract(
+                f.element_at(f.split(disease_label, "#"), -1), 
+                r'^(?:[A-Z]{1}[0-9]{2}[-.A-Z0-9]* |Chapter [IVX]+ )?(.+)$', 
+                1
+            )
+        ).otherwise(disease_label)
     )
