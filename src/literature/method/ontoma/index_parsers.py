@@ -19,6 +19,7 @@ __all__ = [
     "extract_target_entities",
     "extract_drug_entities",
     "extract_disease_curation",
+    "as_target_id_lut",
     "as_drug_id_lut"
 ]
 
@@ -348,6 +349,72 @@ def extract_disease_curation(disease_curation: DataFrame) -> DataFrame:
         )
         # cleanup
         .filter((f.col("entityId").isNotNull()) & (f.length("entityId") > 0))
+        .filter((f.col("entityLabel").isNotNull()) & (f.length("entityLabel") > 0))
+        .distinct()
+    )
+
+def as_target_id_lut(target_index: DataFrame) -> DataFrame:
+    """Generate target id lookup table from the Open Targets target index.
+
+    Args:
+        target_index (DataFrame): Open Targets target index.
+
+    Returns:
+        DataFrame: Target id lookup table.
+    """
+    return (
+        target_index
+        # filter out Xrefs with signalP as a source as only two possible ids (SignalP-TM and SignalP-noTM)
+        .withColumn(
+            "dbXrefs", 
+            f.filter(
+                f.col("dbXrefs"),
+                lambda x: x["source"] != "signalP"
+            )
+        )
+        # transform array of structs to array of strings and format ids
+        .withColumn(
+            "dbXrefs",
+            f.transform(
+                f.col("dbXrefs"),
+                lambda x: f.when(
+                    # if it's a HGNC id, append "HGNC" as a prefix
+                    x["source"] == "HGNC",
+                    f.concat(f.lit("HGNC"), x["id"])
+                ).otherwise(x["id"])
+            )
+        )
+        # extract entities from relevant fields and annotate entity with score and nlpPipelineTrack
+        .select(
+            f.col("id").alias("entityId"),
+            _annotate_entity(
+                f.col("dbXrefs"), 1.0, "id"
+            ).alias("dbXrefs"),
+            _annotate_entity(
+                f.col("proteinIds.id"), 1.0, "id"
+            ).alias("proteinIds")
+        )
+        # flatten and explode array of structs
+        .withColumn(
+            "entity",
+            f.explode(
+                f.flatten(
+                    f.array(
+                        f.col("dbXrefs"),
+                        f.col("proteinIds")
+                    )
+                )
+            )
+        )
+        # select relevant fields and specify entity type
+        .select(
+            f.col("entityId"),
+            f.col("entity.entityLabel").alias("entityLabel"),
+            f.col("entity.entityScore").alias("entityScore"),
+            f.col("entity.nlpPipelineTrack").alias("nlpPipelineTrack"),
+            f.lit("GP").alias("entityType")
+        )
+        # cleanup
         .filter((f.col("entityLabel").isNotNull()) & (f.length("entityLabel") > 0))
         .distinct()
     )
