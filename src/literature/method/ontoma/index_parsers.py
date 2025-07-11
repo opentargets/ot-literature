@@ -228,8 +228,7 @@ def extract_drug_entities(drug_index: DataFrame) -> DataFrame:
                     # if it's an EMA id, extract the last part
                     x["source"] == "EMA",
                     f.transform(x["ids"], lambda i: f.regexp_extract(i, r'.+/EPAR/(.+)', 1))
-                )
-                .otherwise(x["ids"])
+                ).otherwise(x["ids"])
             )
         )
         # extract entities from relevant fields and annotate entity with score and nlpPipelineTrack
@@ -364,7 +363,7 @@ def as_drug_id_lut(drug_index: DataFrame) -> DataFrame:
     """
     return (
         drug_index
-        # filter for sources that have ids
+        # filter crossReferences for sources that have ids
         .withColumn(
             "crossReferences", 
             f.filter(
@@ -378,15 +377,10 @@ def as_drug_id_lut(drug_index: DataFrame) -> DataFrame:
             f.transform(
                 f.col("crossReferences"),
                 lambda x: f.when(
-                    # if it's a chEBI id, append "CHEBI_" as a prefix
+                    # if it's a chEBI id, append "CHEBI" as a prefix
                     x["source"] == "chEBI",
-                    f.concat(f.lit("CHEBI_"), x["ids"][0])
-                ).when(
-                    # if it's a drugbank id, add an underscore between the prefix and the number
-                    x["source"] == "drugbank",
-                    f.regexp_replace(x["ids"][0], "DB", "DB_")
-                )
-                .otherwise(x["ids"][0])
+                    f.concat(f.lit("CHEBI"), x["ids"][0])
+                ).otherwise(x["ids"][0])
             )
         )
         # extract entities from relevant fields and annotate entity with score and nlpPipelineTrack
