@@ -18,7 +18,8 @@ __all__ = [
     "extract_disease_entities",
     "extract_target_entities",
     "extract_drug_entities",
-    "extract_disease_curation"
+    "extract_disease_curation",
+    "as_drug_id_lut"
 ]
 
 
@@ -315,6 +316,69 @@ def extract_disease_curation(disease_curation: DataFrame) -> DataFrame:
         )
         # cleanup
         .filter((f.col("entityId").isNotNull()) & (f.length("entityId") > 0))
+        .filter((f.col("entityLabel").isNotNull()) & (f.length("entityLabel") > 0))
+        .distinct()
+    )
+
+def as_drug_id_lut(drug_index: DataFrame) -> DataFrame:
+    """Generate drug id lookup table from the Open Targets drug index.
+
+    Args:
+        drug_index (DataFrame): Open Targets drug index.
+
+    Returns:
+        DataFrame: Drug id lookup table.
+    """
+    return (
+        drug_index
+        # filter for sources that are ids
+        .withColumn(
+            "crossReferences", 
+            f.filter(
+                f.col("crossReferences"),
+                lambda x: x["source"].isin("chEBI", "drugbank")
+            )
+        )
+        # transform array of structs to array of strings and format ids
+        .withColumn(
+            "crossReferences",
+            f.transform(
+                f.col("crossReferences"),
+                lambda x: f.when(
+                    # if it's a chEBI id, append "CHEBI_" as a prefix
+                    x["source"] == "chEBI",
+                    f.concat(f.lit("CHEBI_"), x["ids"][0])
+                ).when(
+                    # if it's a drugbank id, add an underscore between the prefix and the number
+                    x["source"] == "drugbank",
+                    f.regexp_replace(x["ids"][0], "DB", "DB_")
+                )
+                .otherwise(x["ids"][0])
+            )
+        )
+        # extract entities from relevant fields and annotate entity with score and nlpPipelineTrack
+        .select(
+            f.col("id").alias("entityId"),
+            _annotate_entity(
+                f.col("crossReferences"), 1.0, "id"
+            ).alias("crossReferences")
+        )
+        # explode array of structs
+        .withColumn(
+            "entity",
+            f.explode(
+                f.col("crossReferences"),
+            )
+        )
+        # select relevant fields and specify entity type
+        .select(
+            f.col("entityId"),
+            f.col("entity.entityLabel").alias("entityLabel"),
+            f.col("entity.entityScore").alias("entityScore"),
+            f.col("entity.nlpPipelineTrack").alias("nlpPipelineTrack"),
+            f.lit("CD").alias("entityType")
+        )
+        # cleanup
         .filter((f.col("entityLabel").isNotNull()) & (f.length("entityLabel") > 0))
         .distinct()
     )
