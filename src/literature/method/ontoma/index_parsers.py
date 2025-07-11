@@ -207,6 +207,31 @@ def extract_drug_entities(drug_index: DataFrame) -> DataFrame:
     """
     return (
         drug_index
+         # filter crossReferences for sources that have labels
+        .withColumn(
+            "crossReferences", 
+            f.filter(
+                f.col("crossReferences"),
+                lambda x: x["source"].isin("DailyMed", "USAN", "EMA")
+            )
+        )
+        # transform array of structs to array of strings and format ids
+        .withColumn(
+            "crossReferences",
+            f.transform(
+                f.col("crossReferences"),
+                lambda x: f.when(
+                    # if it's a DailyMed or USAN id, replace spaces encoded as "%20"
+                    x["source"].isin("DailyMed", "USAN"),
+                    f.transform(x["ids"], lambda i: f.regexp_replace(i, "%20", " "))
+                ).when(
+                    # if it's an EMA id, extract the last part
+                    x["source"] == "EMA",
+                    f.transform(x["ids"], lambda i: f.regexp_extract(i, r'.+/EPAR/(.+)', 1))
+                )
+                .otherwise(x["ids"])
+            )
+        )
         # extract entities from relevant fields and annotate entity with score and nlpPipelineTrack
         .select(
             f.col("id").alias("entityId"),
@@ -227,7 +252,13 @@ def extract_drug_entities(drug_index: DataFrame) -> DataFrame:
             ).alias("synonymsTerm"),
             _annotate_entity(
                 f.col("synonyms"), 0.999, "symbol"
-            ).alias("synonymsSymbol")
+            ).alias("synonymsSymbol"),
+            _annotate_entity(
+                f.flatten(f.col("crossReferences")), 0.998, "term"
+            ).alias("crossReferencesTerm"),
+            _annotate_entity(
+                f.flatten(f.col("crossReferences")), 0.998, "symbol"
+            ).alias("crossReferencesSymbol")
         )
         # flatten and explode array of structs
         .withColumn(
@@ -240,7 +271,9 @@ def extract_drug_entities(drug_index: DataFrame) -> DataFrame:
                         f.col("tradeNamesTerm"),
                         f.col("tradeNamesSymbol"),
                         f.col("synonymsTerm"),
-                        f.col("synonymsSymbol")
+                        f.col("synonymsSymbol"),
+                        f.col("crossReferencesTerm"),
+                        f.col("crossReferencesSymbol")
                     )
                 )
             )
@@ -331,7 +364,7 @@ def as_drug_id_lut(drug_index: DataFrame) -> DataFrame:
     """
     return (
         drug_index
-        # filter for sources that are ids
+        # filter for sources that have ids
         .withColumn(
             "crossReferences", 
             f.filter(
