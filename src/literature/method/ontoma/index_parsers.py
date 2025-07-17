@@ -444,10 +444,10 @@ def as_target_id_lut(target_index: DataFrame) -> DataFrame:
         .select(
             f.col("id").alias("entityId"),
             _annotate_entity(
-                f.col("dbXrefs"), 1.0, "id"
+                f.col("dbXrefs"), 1.0, "symbol"
             ).alias("dbXrefs"),
             _annotate_entity(
-                f.col("proteinIds.id"), 1.0, "id"
+                f.col("proteinIds.id"), 1.0, "symbol"
             ).alias("proteinIds")
         )
         # flatten and explode array of structs
@@ -510,7 +510,7 @@ def as_drug_id_lut(drug_index: DataFrame) -> DataFrame:
         .select(
             f.col("id").alias("entityId"),
             _annotate_entity(
-                f.col("crossReferences"), 1.0, "id"
+                f.col("crossReferences"), 1.0, "symbol"
             ).alias("crossReferences")
         )
         # explode array of structs
