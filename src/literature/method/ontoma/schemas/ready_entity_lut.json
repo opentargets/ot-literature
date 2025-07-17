@@ -1,0 +1,27 @@
+{
+    "fields": [
+        {
+            "name": "entityType",
+            "type": "string",
+            "nullable": false,
+            "metadata": {}
+        },
+        {
+            "name": "entityLabelNormalised",
+            "type": "string",
+            "nullable": false,
+            "metadata": {}
+        },
+        {
+            "name": "entityId",
+            "type": {
+                "containsNull": false,
+                "elementType": "string",
+                "type": "array"
+              },
+            "nullable": false,
+            "metadata": {}
+        }
+    ],
+    "type": "struct"
+}
