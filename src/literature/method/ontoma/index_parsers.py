@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 import pyspark.sql.functions as f
 
 from src.literature.method.ontoma.utils import (
+    annotate_entity,
     translate_special_characters,
     clean_disease_label,
     filter_disease_crossrefs,
@@ -14,7 +15,7 @@ from src.literature.method.ontoma.utils import (
 )
 
 if TYPE_CHECKING:
-    from pyspark.sql import Column, DataFrame
+    from pyspark.sql import DataFrame
 
 __all__ = [
     "extract_disease_entities",
@@ -25,27 +26,6 @@ __all__ = [
     "as_drug_id_lut"
 ]
 
-
-def _annotate_entity(c: Column, entity_score: float, nlp_pipeline_track: str) -> Column:
-    """Annotate entity with score and the NLP pipeline to be processed with.
-    
-    Args:
-        c (Column): Column containing entity label.
-        entity_score (float): Score of the entity.
-        nlp_pipeline_track (str): NLP pipeline track to be used.
-    
-    Returns:
-        Column: Column of struct of annotated entities.
-    """
-    return f.transform(
-        # Replace null with empty array
-        f.coalesce(c, f.array()),
-        lambda x: f.struct(
-            x.alias("entityLabel"),
-            f.lit(entity_score).alias("entityScore"),
-            f.lit(nlp_pipeline_track).alias("nlpPipelineTrack")
-        )
-    )
 
 def extract_disease_entities(disease_index: DataFrame) -> DataFrame:
     """Process the Open Targets disease index to extract disease entities.
@@ -61,34 +41,34 @@ def extract_disease_entities(disease_index: DataFrame) -> DataFrame:
         # extract entities from relevant fields and annotate entity with score and nlpPipelineTrack
         .select(
             f.col("id").alias("entityId"),
-            _annotate_entity(
+            annotate_entity(
                 f.array(f.col("name")), 1.0, "term"
             ).alias("nameTerm"),
-            _annotate_entity(
+            annotate_entity(
                 f.array(f.col("name")), 1.0, "symbol"
             ).alias("nameSymbol"),
-            _annotate_entity(
+            annotate_entity(
                 f.col("synonyms.hasExactSynonym"), 0.999, "term"
             ).alias("exactSynonymsTerm"),
-            _annotate_entity(
+            annotate_entity(
                 f.col("synonyms.hasExactSynonym"), 0.999, "symbol"
             ).alias("exactSynonymsSymbol"),
-            _annotate_entity(
+            annotate_entity(
                 f.col("synonyms.hasNarrowSynonym"), 0.998, "term"
             ).alias("narrowSynonymsTerm"),
-            _annotate_entity(
+            annotate_entity(
                 f.col("synonyms.hasNarrowSynonym"), 0.998, "symbol"
             ).alias("narrowSynonymsSymbol"),
-            _annotate_entity(
+            annotate_entity(
                 f.col("synonyms.hasBroadSynonym"), 0.997, "term"
             ).alias("broadSynonymsTerm"),
-            _annotate_entity(
+            annotate_entity(
                 f.col("synonyms.hasBroadSynonym"), 0.997, "symbol"
             ).alias("broadSynonymsSymbol"),
-            _annotate_entity(
+            annotate_entity(
                 f.col("synonyms.hasRelatedSynonym"), 0.996, "term"
             ).alias("relatedSynonymsTerm"),
-            _annotate_entity(
+            annotate_entity(
                 f.col("synonyms.hasRelatedSynonym"), 0.996, "symbol"
             ).alias("relatedSynonymsSymbol")
         )
@@ -143,25 +123,25 @@ def extract_target_entities(target_index: DataFrame) -> DataFrame:
         # extract entities from relevant fields and annotate entity with score and nlpPipelineTrack
         .select(
             f.col("id").alias("entityId"),
-            _annotate_entity(
+            annotate_entity(
                 f.array(f.col("approvedName")), 1.0, "term"
             ).alias("name"),
-            _annotate_entity(
+            annotate_entity(
                 f.array(f.col("approvedSymbol")), 1.0, "symbol"
             ).alias("symbol"),
-            _annotate_entity(
+            annotate_entity(
                 f.col("nameSynonyms.label"), 0.999, "term"
             ).alias("nameSynonyms"),
-            _annotate_entity(
+            annotate_entity(
                 f.col("symbolSynonyms.label"), 0.999, "symbol"
             ).alias("symbolSynonyms"),
-            _annotate_entity(
+            annotate_entity(
                 f.col("proteinIds.id"), 0.999, "symbol"
             ).alias("proteinIds"),
-            _annotate_entity(
+            annotate_entity(
                 f.col("obsoleteNames.label"), 0.998, "term"
             ).alias("obsoleteNames"),
-            _annotate_entity(
+            annotate_entity(
                 f.col("obsoleteSymbols.label"), 0.998, "symbol"
             ).alias("obsoleteSymbols")
         )
@@ -237,28 +217,28 @@ def extract_drug_entities(drug_index: DataFrame) -> DataFrame:
         # extract entities from relevant fields and annotate entity with score and nlpPipelineTrack
         .select(
             f.col("id").alias("entityId"),
-            _annotate_entity(
+            annotate_entity(
                 f.array(f.col("name")), 1.0, "term"
             ).alias("nameTerm"),
-            _annotate_entity(
+            annotate_entity(
                 f.array(f.col("name")), 1.0, "symbol"
             ).alias("nameSymbol"),
-            _annotate_entity(
+            annotate_entity(
                 f.col("tradeNames"), 0.999, "term"
             ).alias("tradeNamesTerm"),
-            _annotate_entity(
+            annotate_entity(
                 f.col("tradeNames"), 0.999, "symbol"
             ).alias("tradeNamesSymbol"),
-            _annotate_entity(
+            annotate_entity(
                 f.col("synonyms"), 0.999, "term"
             ).alias("synonymsTerm"),
-            _annotate_entity(
+            annotate_entity(
                 f.col("synonyms"), 0.999, "symbol"
             ).alias("synonymsSymbol"),
-            _annotate_entity(
+            annotate_entity(
                 f.flatten(f.col("crossReferences")), 0.998, "term"
             ).alias("crossReferencesTerm"),
-            _annotate_entity(
+            annotate_entity(
                 f.flatten(f.col("crossReferences")), 0.998, "symbol"
             ).alias("crossReferencesSymbol")
         )
@@ -316,10 +296,10 @@ def extract_disease_curation(disease_curation: DataFrame) -> DataFrame:
             f.regexp_extract(
                 f.col("SEMANTIC_TAG"), r'^http.+/(\w+_\w+)$', 1
             ).alias("entityId"),
-            _annotate_entity(
+            annotate_entity(
                 f.array(f.col("PROPERTY_VALUE")), 1.0, "term"
             ).alias("curationTerm"),
-            _annotate_entity(
+            annotate_entity(
                 f.array(f.col("PROPERTY_VALUE")), 1.0, "symbol"
             ).alias("curationSymbol")
         )
@@ -369,13 +349,13 @@ def as_disease_id_lut(disease_index:DataFrame) -> DataFrame:
         # extract entities from relevant fields and annotate entity with score and nlpPipelineTrack
         .select(
             f.col("id").alias("entityId"),
-            _annotate_entity(
+            annotate_entity(
                 f.array(f.col("id")), 1.0, "symbol"
             ).alias("identifier"),
-            _annotate_entity(
+            annotate_entity(
                 f.col("dbXRefs"), 0.999, "symbol"
             ).alias("crossRefs"),
-            _annotate_entity(
+            annotate_entity(
                 f.col("obsoleteXRefs"), 0.998, "symbol"
             ).alias("obsoleteCrossRefs")
         )
@@ -443,10 +423,10 @@ def as_target_id_lut(target_index: DataFrame) -> DataFrame:
         # extract entities from relevant fields and annotate entity with score and nlpPipelineTrack
         .select(
             f.col("id").alias("entityId"),
-            _annotate_entity(
+            annotate_entity(
                 f.col("dbXrefs"), 1.0, "symbol"
             ).alias("dbXrefs"),
-            _annotate_entity(
+            annotate_entity(
                 f.col("proteinIds.id"), 1.0, "symbol"
             ).alias("proteinIds")
         )
@@ -509,7 +489,7 @@ def as_drug_id_lut(drug_index: DataFrame) -> DataFrame:
         # extract entities from relevant fields and annotate entity with score and nlpPipelineTrack
         .select(
             f.col("id").alias("entityId"),
-            _annotate_entity(
+            annotate_entity(
                 f.col("crossReferences"), 1.0, "symbol"
             ).alias("crossReferences")
         )

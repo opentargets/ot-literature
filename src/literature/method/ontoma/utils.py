@@ -11,6 +11,27 @@ if TYPE_CHECKING:
     from pyspark.sql import Column, DataFrame
 
 
+def annotate_entity(c: Column, entity_score: float, nlp_pipeline_track: str) -> Column:
+    """Annotate entity with score and the NLP pipeline to be processed with.
+    
+    Args:
+        c (Column): Column containing entity label.
+        entity_score (float): Score of the entity.
+        nlp_pipeline_track (str): NLP pipeline track to be used.
+    
+    Returns:
+        Column: Column of struct of annotated entities.
+    """
+    return f.transform(
+        # Replace null with empty array
+        f.coalesce(c, f.array()),
+        lambda x: f.struct(
+            x.alias("entityLabel"),
+            f.lit(entity_score).alias("entityScore"),
+            f.lit(nlp_pipeline_track).alias("nlpPipelineTrack")
+        )
+    )
+
 def translate_special_characters(label: Column) -> Column:
     """Translate greek alphabet and accented latin characters into latin alphabet.
 
