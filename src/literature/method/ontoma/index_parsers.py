@@ -8,7 +8,9 @@ import pyspark.sql.functions as f
 
 from src.literature.method.ontoma.utils import (
     translate_special_characters,
-    clean_disease_label
+    clean_disease_label,
+    filter_disease_crossrefs,
+    format_disease_identifier
 )
 
 if TYPE_CHECKING:
@@ -18,7 +20,9 @@ __all__ = [
     "extract_disease_entities",
     "extract_target_entities",
     "extract_drug_entities",
-    "extract_disease_curation"
+    "extract_disease_curation",
+    "as_target_id_lut",
+    "as_drug_id_lut"
 ]
 
 
@@ -206,6 +210,30 @@ def extract_drug_entities(drug_index: DataFrame) -> DataFrame:
     """
     return (
         drug_index
+         # filter crossReferences for sources that have labels
+        .withColumn(
+            "crossReferences", 
+            f.filter(
+                f.col("crossReferences"),
+                lambda x: x["source"].isin("DailyMed", "USAN", "EMA")
+            )
+        )
+        # transform array of structs to array of strings and format ids
+        .withColumn(
+            "crossReferences",
+            f.transform(
+                f.col("crossReferences"),
+                lambda x: f.when(
+                    # if it's a DailyMed or USAN id, replace spaces encoded as "%20"
+                    x["source"].isin("DailyMed", "USAN"),
+                    f.transform(x["ids"], lambda i: f.regexp_replace(i, "%20", " "))
+                ).when(
+                    # if it's an EMA id, extract the last part
+                    x["source"] == "EMA",
+                    f.transform(x["ids"], lambda i: f.regexp_extract(i, r'.+/EPAR/(.+)', 1))
+                ).otherwise(x["ids"])
+            )
+        )
         # extract entities from relevant fields and annotate entity with score and nlpPipelineTrack
         .select(
             f.col("id").alias("entityId"),
@@ -226,7 +254,13 @@ def extract_drug_entities(drug_index: DataFrame) -> DataFrame:
             ).alias("synonymsTerm"),
             _annotate_entity(
                 f.col("synonyms"), 0.999, "symbol"
-            ).alias("synonymsSymbol")
+            ).alias("synonymsSymbol"),
+            _annotate_entity(
+                f.flatten(f.col("crossReferences")), 0.998, "term"
+            ).alias("crossReferencesTerm"),
+            _annotate_entity(
+                f.flatten(f.col("crossReferences")), 0.998, "symbol"
+            ).alias("crossReferencesSymbol")
         )
         # flatten and explode array of structs
         .withColumn(
@@ -239,7 +273,9 @@ def extract_drug_entities(drug_index: DataFrame) -> DataFrame:
                         f.col("tradeNamesTerm"),
                         f.col("tradeNamesSymbol"),
                         f.col("synonymsTerm"),
-                        f.col("synonymsSymbol")
+                        f.col("synonymsSymbol"),
+                        f.col("crossReferencesTerm"),
+                        f.col("crossReferencesSymbol")
                     )
                 )
             )
@@ -315,6 +351,184 @@ def extract_disease_curation(disease_curation: DataFrame) -> DataFrame:
         )
         # cleanup
         .filter((f.col("entityId").isNotNull()) & (f.length("entityId") > 0))
+        .filter((f.col("entityLabel").isNotNull()) & (f.length("entityLabel") > 0))
+        .distinct()
+    )
+
+def as_disease_id_lut(disease_index:DataFrame) -> DataFrame:
+    """Generate disease id lookup table from the Open Targets disease index.
+
+    Args:
+        disease_index (DataFrame): Open Targets disease index.
+
+    Returns:
+        DataFrame: Disease id lookup table.
+    """
+    return (
+        disease_index
+        # extract entities from relevant fields and annotate entity with score and nlpPipelineTrack
+        .select(
+            f.col("id").alias("entityId"),
+            _annotate_entity(
+                f.array(f.col("id")), 1.0, "symbol"
+            ).alias("identifier"),
+            _annotate_entity(
+                f.col("dbXRefs"), 0.999, "symbol"
+            ).alias("crossRefs"),
+            _annotate_entity(
+                f.col("obsoleteXRefs"), 0.998, "symbol"
+            ).alias("obsoleteCrossRefs")
+        )
+        # flatten and explode array of structs
+        .withColumn(
+            "entity",
+            f.explode(
+                f.flatten(
+                    f.array(    
+                        f.col("identifier"),
+                        f.col("crossRefs"),
+                        f.col("obsoleteCrossRefs")
+                    )
+                )
+            )
+        )
+        # select relevant fields and specify entity type
+        .select(
+            f.col("entityId"),
+            f.upper(f.trim(f.col("entity.entityLabel"))).alias("entityLabel"),
+            f.col("entity.entityScore").alias("entityScore"),
+            f.col("entity.nlpPipelineTrack").alias("nlpPipelineTrack"),
+            f.lit("DS").alias("entityType")
+        )
+        # filter out disease crossrefs with irrelevant prefixes
+        .transform(filter_disease_crossrefs)
+        # format disease identifier to have consistent formatting
+        .withColumn("entityLabel", format_disease_identifier(f.col("entityLabel")))
+        # cleanup
+        .filter((f.col("entityLabel").isNotNull()) & (f.length("entityLabel") > 0))
+        .distinct()
+    )
+
+def as_target_id_lut(target_index: DataFrame) -> DataFrame:
+    """Generate target id lookup table from the Open Targets target index.
+
+    Args:
+        target_index (DataFrame): Open Targets target index.
+
+    Returns:
+        DataFrame: Target id lookup table.
+    """
+    return (
+        target_index
+        # filter out Xrefs with signalP as a source as only two possible ids (SignalP-TM and SignalP-noTM)
+        .withColumn(
+            "dbXrefs", 
+            f.filter(
+                f.col("dbXrefs"),
+                lambda x: x["source"] != "signalP"
+            )
+        )
+        # transform array of structs to array of strings and format ids
+        .withColumn(
+            "dbXrefs",
+            f.transform(
+                f.col("dbXrefs"),
+                lambda x: f.when(
+                    # if it's a HGNC id, append "HGNC" as a prefix
+                    x["source"] == "HGNC",
+                    f.concat(f.lit("HGNC"), x["id"])
+                ).otherwise(x["id"])
+            )
+        )
+        # extract entities from relevant fields and annotate entity with score and nlpPipelineTrack
+        .select(
+            f.col("id").alias("entityId"),
+            _annotate_entity(
+                f.col("dbXrefs"), 1.0, "symbol"
+            ).alias("dbXrefs"),
+            _annotate_entity(
+                f.col("proteinIds.id"), 1.0, "symbol"
+            ).alias("proteinIds")
+        )
+        # flatten and explode array of structs
+        .withColumn(
+            "entity",
+            f.explode(
+                f.flatten(
+                    f.array(
+                        f.col("dbXrefs"),
+                        f.col("proteinIds")
+                    )
+                )
+            )
+        )
+        # select relevant fields and specify entity type
+        .select(
+            f.col("entityId"),
+            f.col("entity.entityLabel").alias("entityLabel"),
+            f.col("entity.entityScore").alias("entityScore"),
+            f.col("entity.nlpPipelineTrack").alias("nlpPipelineTrack"),
+            f.lit("GP").alias("entityType")
+        )
+        # cleanup
+        .filter((f.col("entityLabel").isNotNull()) & (f.length("entityLabel") > 0))
+        .distinct()
+    )
+
+def as_drug_id_lut(drug_index: DataFrame) -> DataFrame:
+    """Generate drug id lookup table from the Open Targets drug index.
+
+    Args:
+        drug_index (DataFrame): Open Targets drug index.
+
+    Returns:
+        DataFrame: Drug id lookup table.
+    """
+    return (
+        drug_index
+        # filter crossReferences for sources that have ids
+        .withColumn(
+            "crossReferences", 
+            f.filter(
+                f.col("crossReferences"),
+                lambda x: x["source"].isin("chEBI", "drugbank")
+            )
+        )
+        # transform array of structs to array of strings and format ids
+        .withColumn(
+            "crossReferences",
+            f.transform(
+                f.col("crossReferences"),
+                lambda x: f.when(
+                    # if it's a chEBI id, append "CHEBI" as a prefix
+                    x["source"] == "chEBI",
+                    f.concat(f.lit("CHEBI"), x["ids"][0])
+                ).otherwise(x["ids"][0])
+            )
+        )
+        # extract entities from relevant fields and annotate entity with score and nlpPipelineTrack
+        .select(
+            f.col("id").alias("entityId"),
+            _annotate_entity(
+                f.col("crossReferences"), 1.0, "symbol"
+            ).alias("crossReferences")
+        )
+        # explode array of structs
+        .withColumn(
+            "entity",
+            f.explode(
+                f.col("crossReferences"),
+            )
+        )
+        # select relevant fields and specify entity type
+        .select(
+            f.col("entityId"),
+            f.col("entity.entityLabel").alias("entityLabel"),
+            f.col("entity.entityScore").alias("entityScore"),
+            f.col("entity.nlpPipelineTrack").alias("nlpPipelineTrack"),
+            f.lit("CD").alias("entityType")
+        )
+        # cleanup
         .filter((f.col("entityLabel").isNotNull()) & (f.length("entityLabel") > 0))
         .distinct()
     )
