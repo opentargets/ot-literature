@@ -19,7 +19,7 @@ class OpenTargetsTarget:
     """Class to extract target entities from the Open Targets target index."""
 
     @classmethod
-    def as_target_label_lut(
+    def as_label_lut(
         cls: type[OpenTargetsTarget], 
         target_index: DataFrame
     ) -> DataFrame:
@@ -93,7 +93,7 @@ class OpenTargetsTarget:
         )
 
     @classmethod
-    def as_target_id_lut(
+    def as_id_lut(
         cls: type[OpenTargetsTarget], 
         target_index: DataFrame
     ) -> DataFrame:

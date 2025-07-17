@@ -21,7 +21,7 @@ class OpenTargetsDisease:
     """Class to extract disease entities from the Open Targets disease index."""
 
     @classmethod
-    def as_disease_label_lut(
+    def as_label_lut(
         cls: type[OpenTargetsDisease], 
         disease_index: DataFrame
     ) -> DataFrame:
@@ -107,7 +107,7 @@ class OpenTargetsDisease:
         )
     
     @classmethod
-    def as_disease_id_lut(
+    def as_id_lut(
         cls: type[OpenTargetsDisease], 
         disease_index: DataFrame
     ) -> DataFrame:

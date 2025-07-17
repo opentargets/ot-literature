@@ -19,7 +19,7 @@ class OpenTargetsDrug:
     """Class to extract drug entities from the Open Targets drug index."""
 
     @classmethod
-    def as_drug_label_lut(
+    def as_label_lut(
         cls: type[OpenTargetsDrug], 
         drug_index: DataFrame
     ) -> DataFrame:
@@ -121,7 +121,7 @@ class OpenTargetsDrug:
         )
     
     @classmethod
-    def as_drug_id_lut(
+    def as_id_lut(
         cls: type[OpenTargetsDrug], 
         drug_index: DataFrame
     ) -> DataFrame:
