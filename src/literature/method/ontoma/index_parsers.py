@@ -8,7 +8,9 @@ import pyspark.sql.functions as f
 
 from src.literature.method.ontoma.utils import (
     translate_special_characters,
-    clean_disease_label
+    clean_disease_label,
+    filter_disease_crossrefs,
+    format_disease_identifier
 )
 
 if TYPE_CHECKING:
@@ -349,6 +351,60 @@ def extract_disease_curation(disease_curation: DataFrame) -> DataFrame:
         )
         # cleanup
         .filter((f.col("entityId").isNotNull()) & (f.length("entityId") > 0))
+        .filter((f.col("entityLabel").isNotNull()) & (f.length("entityLabel") > 0))
+        .distinct()
+    )
+
+def as_disease_id_lut(disease_index:DataFrame) -> DataFrame:
+    """Generate disease id lookup table from the Open Targets disease index.
+
+    Args:
+        disease_index (DataFrame): Open Targets disease index.
+
+    Returns:
+        DataFrame: Disease id lookup table.
+    """
+    return (
+        disease_index
+        # extract entities from relevant fields and annotate entity with score and nlpPipelineTrack
+        .select(
+            f.col("id").alias("entityId"),
+            _annotate_entity(
+                f.array(f.col("id")), 1.0, "symbol"
+            ).alias("identifier"),
+            _annotate_entity(
+                f.col("dbXRefs"), 0.999, "symbol"
+            ).alias("crossRefs"),
+            _annotate_entity(
+                f.col("obsoleteXRefs"), 0.998, "symbol"
+            ).alias("obsoleteCrossRefs")
+        )
+        # flatten and explode array of structs
+        .withColumn(
+            "entity",
+            f.explode(
+                f.flatten(
+                    f.array(    
+                        f.col("identifier"),
+                        f.col("crossRefs"),
+                        f.col("obsoleteCrossRefs")
+                    )
+                )
+            )
+        )
+        # select relevant fields and specify entity type
+        .select(
+            f.col("entityId"),
+            f.upper(f.trim(f.col("entity.entityLabel"))).alias("entityLabel"),
+            f.col("entity.entityScore").alias("entityScore"),
+            f.col("entity.nlpPipelineTrack").alias("nlpPipelineTrack"),
+            f.lit("DS").alias("entityType")
+        )
+        # filter out disease crossrefs with irrelevant prefixes
+        .transform(filter_disease_crossrefs)
+        # format disease identifier to have consistent formatting
+        .withColumn("entityLabel", format_disease_identifier(f.col("entityLabel")))
+        # cleanup
         .filter((f.col("entityLabel").isNotNull()) & (f.length("entityLabel") > 0))
         .distinct()
     )
