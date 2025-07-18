@@ -72,7 +72,8 @@ class OpenTargetsDiseaseCuration:
                     ).alias("entityLabel"),
                     f.col("entity.entityScore").alias("entityScore"),
                     f.col("entity.nlpPipelineTrack").alias("nlpPipelineTrack"),
-                    f.lit("DS").alias("entityType")
+                    f.lit("DS").alias("entityType"),
+                    f.lit("label").alias("entityKind")
                 )
                 # cleanup
                 .filter((f.col("entityId").isNotNull()) & (f.length("entityId") > 0))

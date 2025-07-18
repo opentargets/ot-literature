@@ -87,7 +87,8 @@ class OpenTargetsTarget:
                     ).alias("entityLabel"),
                     f.col("entity.entityScore").alias("entityScore"), 
                     f.col("entity.nlpPipelineTrack").alias("nlpPipelineTrack"),
-                    f.lit("GP").alias("entityType")
+                    f.lit("GP").alias("entityType"),
+                    f.lit("label").alias("entityKind")
                 )
                 # cleanup
                 .filter((f.col("entityLabel").isNotNull()) & (f.length("entityLabel") > 0))
@@ -160,7 +161,8 @@ class OpenTargetsTarget:
                     f.col("entity.entityLabel").alias("entityLabel"),
                     f.col("entity.entityScore").alias("entityScore"),
                     f.col("entity.nlpPipelineTrack").alias("nlpPipelineTrack"),
-                    f.lit("GP").alias("entityType")
+                    f.lit("GP").alias("entityType"),
+                    f.lit("id").alias("entityKind")
                 )
                 # cleanup
                 .filter((f.col("entityLabel").isNotNull()) & (f.length("entityLabel") > 0))

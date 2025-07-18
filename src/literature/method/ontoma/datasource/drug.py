@@ -115,7 +115,8 @@ class OpenTargetsDrug:
                     ).alias("entityLabel"),
                     f.col("entity.entityScore").alias("entityScore"),
                     f.col("entity.nlpPipelineTrack").alias("nlpPipelineTrack"),
-                    f.lit("CD").alias("entityType")
+                    f.lit("CD").alias("entityType"),
+                    f.lit("label").alias("entityKind")
                 )
                 # cleanup
                 .filter((f.col("entityLabel").isNotNull()) & (f.length("entityLabel") > 0))
@@ -180,7 +181,8 @@ class OpenTargetsDrug:
                     f.col("entity.entityLabel").alias("entityLabel"),
                     f.col("entity.entityScore").alias("entityScore"),
                     f.col("entity.nlpPipelineTrack").alias("nlpPipelineTrack"),
-                    f.lit("CD").alias("entityType")
+                    f.lit("CD").alias("entityType"),
+                    f.lit("id").alias("entityKind")
                 )
                 # cleanup
                 .filter((f.col("entityLabel").isNotNull()) & (f.length("entityLabel") > 0))

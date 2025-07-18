@@ -29,6 +29,12 @@
             "type": "string",
             "nullable": false,
             "metadata": {}
+        },
+        {
+            "name": "entityKind",
+            "type": "string",
+            "nullable": false,
+            "metadata": {}
         }
     ],
     "type": "struct"

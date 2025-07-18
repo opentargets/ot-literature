@@ -31,6 +31,12 @@
             "metadata": {}
         },
         {
+            "name": "entityKind",
+            "type": "string",
+            "nullable": false,
+            "metadata": {}
+        },
+        {
             "name": "entityLabelNormalised",
             "type": "string",
             "nullable": false,

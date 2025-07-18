@@ -101,7 +101,8 @@ class OpenTargetsDisease:
                     ).alias("entityLabel"),
                     f.col("entity.entityScore").alias("entityScore"),
                     f.col("entity.nlpPipelineTrack").alias("nlpPipelineTrack"),
-                    f.lit("DS").alias("entityType")
+                    f.lit("DS").alias("entityType"),
+                    f.lit("label").alias("entityKind")
                 )
                 # cleanup
                 .filter((f.col("entityLabel").isNotNull()) & (f.length("entityLabel") > 0))
@@ -158,7 +159,8 @@ class OpenTargetsDisease:
                     f.upper(f.trim(f.col("entity.entityLabel"))).alias("entityLabel"),
                     f.col("entity.entityScore").alias("entityScore"),
                     f.col("entity.nlpPipelineTrack").alias("nlpPipelineTrack"),
-                    f.lit("DS").alias("entityType")
+                    f.lit("DS").alias("entityType"),
+                    f.lit("id").alias("entityKind")
                 )
                 # filter out disease crossrefs with irrelevant prefixes
                 .transform(filter_disease_crossrefs)
