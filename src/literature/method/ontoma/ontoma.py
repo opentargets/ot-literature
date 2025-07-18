@@ -14,7 +14,7 @@ from src.literature.method.ontoma.index_parsers import (
     extract_target_entities,
     extract_drug_entities
 )
-from src.literature.method.ontoma.utils import (
+from literature.method.ontoma.common.utils import (
     translate_special_characters,
     clean_disease_label
 )
