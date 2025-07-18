@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 import pyspark.sql.functions as f
 
 from src.literature.method.ontoma.dataset.raw_entity_lut import RawEntityLUT
-from literature.method.ontoma.common.utils import (
+from src.literature.method.ontoma.common.utils import (
     annotate_entity,
     translate_special_characters
 )
