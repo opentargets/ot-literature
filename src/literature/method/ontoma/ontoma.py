@@ -9,12 +9,9 @@ from typing import TYPE_CHECKING
 import pyspark.sql.functions as f
 from pyspark.sql import Window
 
-from src.literature.method.ontoma.index_parsers import (
-    extract_disease_entities,
-    extract_target_entities,
-    extract_drug_entities
-)
-from literature.method.ontoma.common.utils import (
+from src.literature.method.ontoma.dataset.raw_entity_lut import RawEntityLUT
+from src.literature.method.ontoma.dataset.ready_entity_lut import ReadyEntityLUT
+from src.literature.method.ontoma.common.utils import (
     translate_special_characters,
     clean_disease_label
 )
@@ -28,38 +25,36 @@ if TYPE_CHECKING:
 class OnToma:
     """Class to initialise an entity lookup table for mapping entities."""
 
-    disease_index: DataFrame | None = None
-    target_index: DataFrame | None = None
-    drug_index: DataFrame | None = None
-    _entity_lut: DataFrame | None = field(init=False, default=None)
+    entity_lut_list: list[RawEntityLUT]
+    _entity_lut: RawEntityLUT | None = field(init=False, default=None)
 
     def __post_init__(self: OnToma) -> None:
         """Post init.
 
-        Initialises an entity lookup table for mapping entities using the index(es) provided.
+        Initialises an entity lookup table for mapping entities using the list of entity lookup tables provided.
 
         Raises:
-            ValueError: When no index is provided.
+            TypeError: When entity_lut_list is not a list or when elements of entity_lut_list are not RawEntityLUT.
+            ValueError: When entity_lut_list is empty.
         """
         # validate the input
-        if (
-            self.disease_index is None 
-            and self.target_index is None 
-            and self.drug_index is None
-        ):
-            raise ValueError("At least one index must be provided.")
-    
-        # extract entities to generate entity lookup tables using index-specific functions
-        entity_luts = self._extract_index_entities()
+        if not isinstance(self.entity_lut_list, list):
+            raise TypeError("entity_lut_list must be a list.")
+        
+        if not self.entity_lut_list:
+            raise ValueError("entity_lut_list must contain at least one element.")
+        
+        if not all(isinstance(entity_lut, RawEntityLUT) for entity_lut in self.entity_lut_list):
+            raise TypeError("Each entity_lut must be a RawEntityLUT.")
 
         # concatenate entity lookup tables for downstream processing
-        self._entity_lut = self._concatenate_entity_luts(entity_luts)
+        self._entity_lut = self._concatenate_entity_luts(self.entity_lut_list)
 
         # normalise the entity lookup table using an NLP pipeline
-        self._entity_lut = self._normalise_entities(self._entity_lut)
+        #self._entity_lut = self._normalise_entities(self._entity_lut)
 
         # post-processing to get relevant entity ids for each entity label
-        self._entity_lut = self._get_relevant_entity_ids(self._entity_lut)
+        #self._entity_lut = self._get_relevant_entity_ids(self._entity_lut)
 
     @property
     def df(self: OnToma) -> DataFrame:
@@ -68,41 +63,22 @@ class OnToma:
         Returns:
             DataFrame: Entity lookup table initialised in the post init.
         """
-        return self._entity_lut
-        
-    def _extract_index_entities(self: OnToma) -> list[DataFrame]:
-        """Extract entities to generate entity lookup tables using functions specific for each index.
-
-        Returns:
-            list[DataFrame]: List of entity lookup tables containing extracted entities.
-        """
-        # specify function to be used for each index
-        index_function_dict = {
-            "disease_index": (self.disease_index, extract_disease_entities),
-            "target_index": (self.target_index, extract_target_entities),
-            "drug_index": (self.drug_index, extract_drug_entities)
-        }
-
-        return [
-            function(index) 
-            for name, (index, function) in index_function_dict.items() 
-            if index is not None
-        ]
+        return self._entity_lut.df
     
     @staticmethod
-    def _concatenate_entity_luts(lut_list: list[DataFrame]) -> DataFrame:
-        """Concatenate entity lookup tables.
+    def _concatenate_entity_luts(lut_list: list[RawEntityLUT]) -> RawEntityLUT:
+        """Concatenate raw entity lookup tables.
 
         Args:
-            lut_list (list[DataFrame]): List of entity lookup tables to be concatenated.
+            lut_list (list[RawEntityLUT]): List of raw entity lookup tables to be concatenated.
 
         Returns:
-            DataFrame: Concatenated entity lookup table.
+            RawEntityLUT: Concatenated raw entity lookup table.
         """
         if len(lut_list) == 1:
             return lut_list[0]
         
-        return reduce(lambda lut1, lut2: lut1.unionByName(lut2), lut_list)
+        return reduce(lambda lut1, lut2: RawEntityLUT(lut1.df.unionByName(lut2.df)), lut_list)
 
     @staticmethod
     def _normalise_entities(df: DataFrame) -> DataFrame:
