@@ -10,6 +10,7 @@ import pyspark.sql.functions as f
 from pyspark.sql import Window
 
 from src.literature.method.ontoma.dataset.raw_entity_lut import RawEntityLUT
+from src.literature.method.ontoma.dataset.normalised_entity_lut import NormalisedEntityLUT
 from src.literature.method.ontoma.dataset.ready_entity_lut import ReadyEntityLUT
 from src.literature.method.ontoma.common.utils import (
     translate_special_characters,
@@ -26,7 +27,7 @@ class OnToma:
     """Class to initialise an entity lookup table for mapping entities."""
 
     entity_lut_list: list[RawEntityLUT]
-    _entity_lut: RawEntityLUT | None = field(init=False, default=None)
+    _entity_lut: NormalisedEntityLUT | None = field(init=False, default=None)
 
     def __post_init__(self: OnToma) -> None:
         """Post init.
@@ -48,10 +49,10 @@ class OnToma:
             raise TypeError("Each entity_lut must be a RawEntityLUT.")
 
         # concatenate entity lookup tables for downstream processing
-        self._entity_lut = self._concatenate_entity_luts(self.entity_lut_list)
+        raw_entity_lut = self._concatenate_entity_luts(self.entity_lut_list)
 
         # normalise the entity lookup table using an NLP pipeline
-        #self._entity_lut = self._normalise_entities(self._entity_lut)
+        self._entity_lut = self._normalise_entities(raw_entity_lut)
 
         # post-processing to get relevant entity ids for each entity label
         #self._entity_lut = self._get_relevant_entity_ids(self._entity_lut)
@@ -81,47 +82,50 @@ class OnToma:
         return reduce(lambda lut1, lut2: RawEntityLUT(lut1.df.unionByName(lut2.df)), lut_list)
 
     @staticmethod
-    def _normalise_entities(df: DataFrame) -> DataFrame:
-        """Normalise entities using NLP pipeline.
+    def _normalise_entities(raw_entity_lut: RawEntityLUT) -> NormalisedEntityLUT:
+        """Normalise entities using an NLP pipeline.
 
         The output column selected is determined by the NLP pipeline type specified.
 
         Args:
-            df (DataFrame): DataFrame containing entity labels to be normalised.
+            df (RawEntityLUT): Raw entity lookup table containing entity labels to be normalised.
 
         Returns:
-            DataFrame: DataFrame with additional column containing normalised entity labels.
+            NormalisedEntityLUT: Normalised entity lookup table containing normalised entity labels.
         """
-        normalised_entities = NLPPipeline.apply_pipeline(df, "entityLabel")
+        normalised_entities = NLPPipeline.apply_pipeline(raw_entity_lut.df, "entityLabel")
 
-        return (
-            normalised_entities
-            .withColumn(
-                "entityLabelNormalised",
-                f.when(
-                    f.col("nlpPipelineTrack") == "term",
-                    f.array_join(
-                        f.array_sort(
+        return NormalisedEntityLUT(
+            _df=(
+                normalised_entities
+                .withColumn(
+                    "entityLabelNormalised",
+                    f.when(
+                        f.col("nlpPipelineTrack") == "term",
+                        f.array_join(
+                            f.array_sort(
+                                f.filter(
+                                    f.array_distinct(f.col("finished_term")),
+                                    lambda c: c.isNotNull() & (c != "")
+                                )
+                            ),
+                            ""
+                        )
+                    ).when(
+                        f.col("nlpPipelineTrack") == "symbol",
+                        f.array_join(
                             f.filter(
-                                f.array_distinct(f.col("finished_term")),
+                                f.col("finished_symbol"), 
                                 lambda c: c.isNotNull() & (c != "")
-                            )
-                        ),
-                        ""
-                    )
-                ).when(
-                    f.col("nlpPipelineTrack") == "symbol",
-                    f.array_join(
-                        f.filter(
-                            f.col("finished_symbol"), 
-                            lambda c: c.isNotNull() & (c != "")
-                        ),
-                        ""
+                            ),
+                            ""
+                        )
                     )
                 )
-            )
-            .drop("finished_term", "finished_symbol", "nlpPipelineTrack", "entityLabel")
-            .filter(f.col("entityLabelNormalised").isNotNull() & (f.length("entityLabelNormalised") > 0))
+                .drop("finished_term", "finished_symbol") #, "nlpPipelineTrack", "entityLabel")
+                .filter(f.col("entityLabelNormalised").isNotNull() & (f.length("entityLabelNormalised") > 0))
+            ),
+            _schema=NormalisedEntityLUT.get_schema()
         )
     
     @staticmethod
