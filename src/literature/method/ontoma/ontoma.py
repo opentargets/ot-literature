@@ -164,26 +164,28 @@ class OnToma:
         )
     
     @staticmethod
-    def _validate_entity_types(
+    def _check_mapping_compatibility(
         lut: DataFrame, 
         df: DataFrame, 
-        type_col_name: str
+        lut_col_name: str,
+        df_col_name: str
     ) -> bool:
-        """Check if all the entity types in the provided dataframe are in the entity lookup table.
+        """Check if the entity lookup table can be used to map the entities in the provided dataframe.
 
         Args:
             lut (DataFrame): The entity lookup table.
             df (DataFrame): The provided dataframe.
-            type_col_name (str): Name of the column containing the entity types.
+            lut_col_name (str): Name of the column containing the entity property in the entity lookup table.
+            df_col_name (str): Name of the column containing the entity property in the provided dataframe.
 
         Returns:
-            bool: True if all the entity types are in the entity lookup table, False otherwise.
+            bool: True if all the entity properties are in the entity lookup table, False otherwise.
         """
-        lut_types = lut.select("entityType").distinct().collect()
+        lut_properties = lut.select(lut_col_name).distinct().collect()
 
-        df_types = df.select(type_col_name).distinct().collect()
+        df_properties = df.select(df_col_name).distinct().collect()
 
-        return all(val in lut_types for val in df_types)
+        return all(val in lut_properties for val in df_properties)
     
     @staticmethod
     def _extract_input_entities(
@@ -267,7 +269,7 @@ class OnToma:
             df = df.withColumn(type_col_name, type_col)
 
         # check if all the entity types to be mapped are in the entity lookup table
-        if not self._validate_entity_types(self.df, df, type_col_name):
+        if not self._check_mapping_compatibility(self.df, df, "entityType", type_col_name):
             raise ValueError("Unable to map the provided entity type(s).")
     
         # extract entities from input dataframe
