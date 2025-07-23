@@ -27,7 +27,7 @@ class OnToma:
     """Class to initialise an entity lookup table for mapping entities."""
 
     entity_lut_list: list[RawEntityLUT]
-    _entity_lut: NormalisedEntityLUT | None = field(init=False, default=None)
+    _entity_lut: ReadyEntityLUT | None = field(init=False, default=None)
 
     def __post_init__(self: OnToma) -> None:
         """Post init.
@@ -52,10 +52,10 @@ class OnToma:
         raw_entity_lut = self._concatenate_entity_luts(self.entity_lut_list)
 
         # normalise the entity lookup table using an NLP pipeline
-        self._entity_lut = self._normalise_entities(raw_entity_lut)
+        normalised_entity_lut = self._normalise_entities(raw_entity_lut)
 
         # post-processing to get relevant entity ids for each entity label
-        #self._entity_lut = self._get_relevant_entity_ids(self._entity_lut)
+        self._entity_lut = self._get_relevant_entity_ids(normalised_entity_lut)
 
     @property
     def df(self: OnToma) -> DataFrame:
@@ -88,7 +88,7 @@ class OnToma:
         The output column selected is determined by the NLP pipeline type specified.
 
         Args:
-            df (RawEntityLUT): Raw entity lookup table containing entity labels to be normalised.
+            raw_entity_lut (RawEntityLUT): Raw entity lookup table containing entity labels to be normalised.
 
         Returns:
             NormalisedEntityLUT: Normalised entity lookup table containing normalised entity labels.
@@ -129,24 +129,27 @@ class OnToma:
         )
     
     @staticmethod
-    def _get_relevant_entity_ids(df: DataFrame) -> DataFrame:
+    def _get_relevant_entity_ids(normalised_entity_lut: NormalisedEntityLUT) -> ReadyEntityLUT:
         """Get relevant entity ids for each entity label.
 
         Args:
-            df (DataFrame): DataFrame containing all entity ids for each entity label.
+            normalised_entity_lut (NormalisedEntityLUT): Normalised entity lookup table containing all entity ids for each entity label.
 
         Returns:
-            DataFrame: DataFrame containing only the relevant entity ids for each entity label.
+            ReadyEntityLUT: Entity lookup table containing only the relevant entity ids for each entity label, ready to be used for entity mapping.
 
         """
-        w = Window.partitionBy("entityType", "entityLabelNormalised").orderBy(f.col("entityScore").desc())
+        w = Window.partitionBy("entityKind", "entityType", "entityLabelNormalised").orderBy(f.col("entityScore").desc())
 
-        return (
-            df
-            .withColumn("entityRank", f.dense_rank().over(w))
-            .filter(f.col("entityRank") == 1)
-            .groupBy(f.col("entityType"), f.col("entityLabelNormalised"))
-            .agg(f.collect_set(f.col("entityId")).alias("entityIds"))
+        return ReadyEntityLUT(
+            _df=(
+                normalised_entity_lut.df
+                .withColumn("entityRank", f.dense_rank().over(w))
+                .filter(f.col("entityRank") == 1)
+                .groupBy("entityKind", "entityType", "entityLabelNormalised")
+                .agg(f.collect_set(f.col("entityId")).alias("entityIds"))
+            ),
+            _schema=ReadyEntityLUT.get_schema()
         )
     
     @staticmethod

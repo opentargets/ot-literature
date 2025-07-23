@@ -19,7 +19,7 @@
             "metadata": {}
         },
         {
-            "name": "entityId",
+            "name": "entityIds",
             "type": {
                 "containsNull": false,
                 "elementType": "string",
