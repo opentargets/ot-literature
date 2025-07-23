@@ -1,13 +1,13 @@
 {
     "fields": [
         {
-            "name": "entityType",
+            "name": "entityKind",
             "type": "string",
             "nullable": false,
             "metadata": {}
         },
         {
-            "name": "entityKind",
+            "name": "entityType",
             "type": "string",
             "nullable": false,
             "metadata": {}

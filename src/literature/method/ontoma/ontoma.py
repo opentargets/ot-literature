@@ -228,6 +228,7 @@ class OnToma:
         df: DataFrame, 
         result_col_name: str,
         label_col_name: str, 
+        entity_kind: str,
         type_col_name: str | None = None, 
         type_col: Column | None = None
      ) -> DataFrame:
@@ -243,6 +244,7 @@ class OnToma:
             df (DataFrame): DataFrame containing entity labels to be mapped.
             result_col_name (str): Name of the column for the result.
             label_col_name (str): Name of the column containing the entity labels.
+            entity_kind (str): Kind (label or id) of the entity label.
             type_col_name (str | None): Name of the column containing the type of the entity label.
             type_col (Column | None): Column containing the type of the entity label.
 
@@ -271,6 +273,13 @@ class OnToma:
         # check if all the entity types to be mapped are in the entity lookup table
         if not self._check_mapping_compatibility(self.df, df, "entityType", type_col_name):
             raise ValueError("Unable to map the provided entity type(s).")
+        
+        # add kind information to the input dataframe
+        df = df.withColumn("entityKind", f.lit(entity_kind))
+
+        # check if all the entity kinds to be mapped are in the entity lookup table
+        if not self._check_mapping_compatibility(self.df, df, "entityKind", "entityKind"):
+            raise ValueError("Unable to map the provided entity kind(s).")
     
         # extract entities from input dataframe
         extracted_entities = self._extract_input_entities(df, label_col_name, type_col_name)
@@ -284,10 +293,11 @@ class OnToma:
                     .select(
                         f.col("entityLabelNormalised"),
                         f.col("entityType").alias(type_col_name),
+                        f.col("entityKind"),
                         f.col("entityIds")
                     )
                 ),
-                on=["entityLabelNormalised", type_col_name],
+                on=["entityLabelNormalised", type_col_name, "entityKind"],
                 how="left"
             )
         )
