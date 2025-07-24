@@ -9,13 +9,14 @@ from typing import TYPE_CHECKING
 import pyspark.sql.functions as f
 from pyspark.sql import Window
 
+from src.literature.method.ontoma.common.utils import (
+    translate_special_characters,
+    clean_disease_label,
+    format_identifier
+)
 from src.literature.method.ontoma.dataset.raw_entity_lut import RawEntityLUT
 from src.literature.method.ontoma.dataset.normalised_entity_lut import NormalisedEntityLUT
 from src.literature.method.ontoma.dataset.ready_entity_lut import ReadyEntityLUT
-from src.literature.method.ontoma.common.utils import (
-    translate_special_characters,
-    clean_disease_label
-)
 from src.literature.method.ontoma.nlp_pipeline import NLPPipeline
 
 if TYPE_CHECKING:
@@ -188,14 +189,14 @@ class OnToma:
         return all(val in lut_properties for val in df_properties)
     
     @staticmethod
-    def _extract_input_entities(
+    def _extract_query_entity_labels(
         df: DataFrame,
         label_col_name: str,
         type_col_name: str,
     ) -> DataFrame:
-        """Extract entities from the provided dataframe.
+        """Extract query entity labels from the provided dataframe.
 
-        Entities are set up for normalisation via both the term and symbol tracks of the nlp pipeline.
+        Entity labels are set up for normalisation via both the term and symbol tracks of the NLP pipeline.
 
         Args:
             df (DataFrame): DataFrame containing entity labels to be extracted.
@@ -203,7 +204,7 @@ class OnToma:
             type_col_name (str): Name of the column containing the type of the entity label.
         
         Returns:
-            DataFrame: DataFrame with additional columns containing entity label and NLP pipeline track.
+            DataFrame: DataFrame with additional columns containing entity string and NLP pipeline track.
         """
         return (
             df
@@ -212,7 +213,7 @@ class OnToma:
                     # convert greek alphabet to english alphabet
                     # https://www.rapidtables.com/math/symbols/greek_alphabet.html
                     "entityLabel": translate_special_characters(f.trim(f.col(label_col_name))),
-                    # all input entities will be normalised using both the term and symbol tracks of the nlp pipeline
+                    # all query entities will be normalised using both the term and symbol tracks of the NLP pipeline
                     "nlpPipelineTrack": f.explode(f.array(f.lit("term"), f.lit("symbol")))
                 }
             )
@@ -220,6 +221,34 @@ class OnToma:
                 "entityLabel",
                 f.when(f.col(type_col_name) == "DS", clean_disease_label(f.col("entityLabel")))
                 .otherwise(f.col("entityLabel"))
+            )
+        )
+    
+    @staticmethod
+    def _extract_query_entity_ids(
+        df: DataFrame,
+        id_col_name: str
+    ) -> DataFrame:
+        """Extract query entity ids from the provided dataframe.
+
+        Entity ids are set up for normalisation via the symbol track of the NLP pipeline.
+
+        Args:
+            df (DataFrame): DataFrame containing entity ids to be extracted.
+            id_col_name (str): Name of the column containing the entity ids.
+
+        Returns:
+            DataFrame: DataFrame with additional columns containing entity string and NLP pipeline track.
+        """
+        return (
+            df
+            .withColumns(
+                {
+                    # format ids to be consistent
+                    "entityLabel": format_identifier(f.upper(f.trim(f.col(id_col_name)))),
+                    # all query ids will be normalised using the symbol track of the NLP pipeline
+                    "nlpPipelineTrack": f.lit("symbol")
+                }
             )
         )
 
@@ -282,7 +311,10 @@ class OnToma:
             raise ValueError("Unable to map the provided entity kind(s).")
     
         # extract entities from input dataframe
-        extracted_entities = self._extract_input_entities(df, label_col_name, type_col_name)
+        if entity_kind == "label":
+            extracted_entities = self._extract_query_entity_labels(df, label_col_name, type_col_name)
+        if entity_kind == "id":
+            extracted_entities = self._extract_query_entity_ids(df, label_col_name)
 
         # normalise entities and join with entity lookup table
         mapped_entities = (

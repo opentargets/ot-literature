@@ -11,7 +11,7 @@ from src.literature.method.ontoma.common.utils import (
     annotate_entity,
     translate_special_characters,
     filter_disease_crossrefs,
-    format_disease_identifier
+    format_identifier
 )
 
 if TYPE_CHECKING:
@@ -165,7 +165,7 @@ class OpenTargetsDisease:
                 # filter out disease crossrefs with irrelevant prefixes
                 .transform(filter_disease_crossrefs)
                 # format disease identifier to have consistent formatting
-                .withColumn("entityLabel", format_disease_identifier(f.col("entityLabel")))
+                .withColumn("entityLabel", format_identifier(f.col("entityLabel")))
                 # cleanup
                 .filter((f.col("entityLabel").isNotNull()) & (f.length("entityLabel") > 0))
                 .distinct()

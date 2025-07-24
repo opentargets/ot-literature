@@ -92,23 +92,23 @@ def filter_disease_crossrefs(disease_df: DataFrame) -> DataFrame:
     
     return disease_df.filter(~filter_condition)
 
-def format_disease_identifier(disease_identifier: Column) -> Column:
-    """Format disease identifier to have consistent formatting.
+def format_identifier(identifier: Column) -> Column:
+    """Format identifier to have consistent formatting.
 
     Args:
-        disease_identifier (Column): Column containing the disease identifier.
+        identifier (Column): Column containing the identifier.
 
     Returns:
-        Column: Column containing the formatted disease identifier.
+        Column: Column containing the formatted identifier.
     """
-    # ensure consistent formatting across disease identifiers
-    disease_identifier = (
+    # ensure consistent formatting across identifiers
+    identifier = (
         f.when(
-            f.length(f.regexp_extract(disease_identifier, r'^.+:(.+_.+)$', 1)) > 1,
-            f.regexp_extract(disease_identifier, r'^.+:(.+_.+)$', 1)
-        ).otherwise(disease_identifier)
+            f.length(f.regexp_extract(identifier, r'^.+:(.+_.+)$', 1)) > 1,
+            f.regexp_extract(identifier, r'^.+:(.+_.+)$', 1)
+        ).otherwise(identifier)
     )
-    disease_identifier = f.regexp_replace(disease_identifier, "_", ":")
+    identifier = f.regexp_replace(identifier, "_", ":")
     
     # ensure Orphanet identifiers are consistent
-    return f.regexp_replace(disease_identifier, r'ORDO:|ORPHA:', "ORPHANET:")
+    return f.regexp_replace(identifier, r'ORDO:|ORPHA:', "ORPHANET:")
