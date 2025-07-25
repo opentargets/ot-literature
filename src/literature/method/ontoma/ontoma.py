@@ -256,7 +256,7 @@ class OnToma:
         self: OnToma, 
         df: DataFrame, 
         result_col_name: str,
-        label_col_name: str, 
+        entity_col_name: str, 
         entity_kind: str,
         type_col_name: str | None = None, 
         type_col: Column | None = None
@@ -272,7 +272,7 @@ class OnToma:
         Args:
             df (DataFrame): DataFrame containing entity labels to be mapped.
             result_col_name (str): Name of the column for the result.
-            label_col_name (str): Name of the column containing the entity labels.
+            entity_col_name (str): Name of the column containing the entity labels.
             entity_kind (str): Kind (label or id) of the entity label.
             type_col_name (str | None): Name of the column containing the type of the entity label.
             type_col (Column | None): Column containing the type of the entity label.
@@ -312,9 +312,9 @@ class OnToma:
     
         # extract entities from input dataframe
         if entity_kind == "label":
-            extracted_entities = self._extract_query_entity_labels(df, label_col_name, type_col_name)
+            extracted_entities = self._extract_query_entity_labels(df, entity_col_name, type_col_name)
         if entity_kind == "id":
-            extracted_entities = self._extract_query_entity_ids(df, label_col_name)
+            extracted_entities = self._extract_query_entity_ids(df, entity_col_name)
 
         # normalise entities and join with entity lookup table
         mapped_entities = (
