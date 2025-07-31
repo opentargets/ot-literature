@@ -92,7 +92,10 @@ class OnToma:
             NormalisedEntityLUT: Normalised entity lookup table containing normalised entity labels.
         """
         return NormalisedEntityLUT(
-            _df=self._normalise_entities(raw_entity_lut.df),
+            _df=(
+                self._normalise_entities(raw_entity_lut.df)
+                .filter(f.col("entityLabelNormalised").isNotNull() & (f.length("entityLabelNormalised") > 0))
+            ),
             _schema=NormalisedEntityLUT.get_schema()
         )
     
@@ -137,7 +140,6 @@ class OnToma:
                 )
             )
             .drop("finished_term", "finished_symbol") #, "nlpPipelineTrack", "entityLabel")
-            .filter(f.col("entityLabelNormalised").isNotNull() & (f.length("entityLabelNormalised") > 0))
         )
     
     @staticmethod
