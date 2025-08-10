@@ -143,6 +143,12 @@ class OpenTargetsDrug:
         return RawEntityLUT(
             _df=(
                 drug_index
+                # the drug index has cross references from six sources
+                # sources that have ids (chEBI, drugbank) are processed below
+                # sources that have labels (DailyMed, USAN, EMA) are processed in the as_label_lut function above
+                # cross references from INN are excluded as they are not useful for drug ontology mapping
+                # (they indicate which International Nonproprietary Names for Pharmaceutical Substances (INN) Proposed List the drug is mentioned in)
+                
                 # filter crossReferences for sources that have ids
                 .withColumn(
                     "crossReferences", 
