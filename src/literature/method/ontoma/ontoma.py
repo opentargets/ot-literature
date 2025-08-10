@@ -10,7 +10,7 @@ import pyspark.sql.functions as f
 from pyspark.sql import Window
 
 from src.literature.method.ontoma.common.utils import (
-    translate_special_characters,
+    get_alternative_translations,
     clean_disease_label,
     format_identifier
 )
@@ -210,15 +210,18 @@ class OnToma:
         """
         return (
             df
-            .withColumns(
-                {
-                    # convert greek alphabet to english alphabet
-                    # https://www.rapidtables.com/math/symbols/greek_alphabet.html
-                    "entityLabel": translate_special_characters(f.trim(f.col(label_col_name))),
-                    # all query entities will be normalised using both the term and symbol tracks of the NLP pipeline
-                    "nlpPipelineTrack": f.explode(f.array(f.lit("term"), f.lit("symbol")))
-                }
+            # translate non-latin alphabet characters, taking into account that
+            # labels that contain special characters should not always be translated
+            .withColumn(
+                "entityLabel",
+                f.explode(get_alternative_translations(f.trim(f.col(label_col_name))))
             )
+            # all query entities will be normalised using both the term and symbol tracks of the NLP pipeline
+            .withColumn(
+                "nlpPipelineTrack",
+                f.explode(f.array(f.lit("term"), f.lit("symbol")))
+            )
+            # disease labels require an additional cleaning step
             .withColumn(
                 "entityLabel",
                 f.when(f.col(type_col_name) == "DS", clean_disease_label(f.col("entityLabel")))

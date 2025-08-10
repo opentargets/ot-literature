@@ -9,7 +9,7 @@ import pyspark.sql.functions as f
 from src.literature.method.ontoma.dataset.raw_entity_lut import RawEntityLUT
 from src.literature.method.ontoma.common.utils import (
     annotate_entity,
-    translate_special_characters,
+    get_alternative_translations,
     clean_disease_label
 )
 
@@ -63,11 +63,12 @@ class OpenTargetsDiseaseCuration:
                 # select relevant fields and specify entity type
                 .select(
                     f.col("entityId"),
-                    clean_disease_label(
-                        translate_special_characters(
-                            f.trim(
-                                f.col("entity.entityLabel")
-                            )
+                    # translate non-latin alphabet characters, taking into account that
+                    # labels that contain special characters should not always be translated
+                    f.explode(
+                        get_alternative_translations(
+                            # remove prefixes from curated disease labels
+                            clean_disease_label(f.trim(f.col("entity.entityLabel")))
                         )
                     ).alias("entityLabel"),
                     f.col("entity.entityScore").alias("entityScore"),

@@ -32,12 +32,10 @@ def annotate_entity(c: Column, entity_score: float, nlp_pipeline_track: str) -> 
         )
     )
 
-def translate_special_characters(label: Column) -> Column:
-    """Translate greek alphabet and accented latin characters into latin alphabet.
+def translate_greek_alphabet(label: Column) -> Column:
+    """Translate greek alphabet into latin alphabet.
 
-    Conversions are based on the following websites:
-    https://www.rapidtables.com/math/symbols/greek_alphabet.html
-    https://en.wikipedia.org/wiki/Latin-1_Supplement
+    Translations are based on https://www.rapidtables.com/math/symbols/greek_alphabet.html
 
     Args:
         label (Column): Column containing the label to be translated.
@@ -48,8 +46,54 @@ def translate_special_characters(label: Column) -> Column:
     return (
         f.translate(
             label,
-            "αβγδεζηικλμνξπρτυωàèìòùáéíóúâêîôûäëïöüÀÈÌÒÙÁÉÍÓÚÂÊÎÔÛÄËÏÖÜãåõøÃÅÕØçñýÇÑÝ",
-            "abgdezhiklmnxprtuoaeiouaeiouaeiouaeiouAEIOUAEIOUAEIOUAEIOUaaooAAOOcnyCNY"
+            "αβγδεζηικλμνξπρτυω",
+            "abgdezhiklmnxprtuo"
+        )
+    )
+
+def translate_special_characters(label: Column) -> Column:
+    """Translate accented latin characters into latin alphabet.
+
+    Translations are based on https://en.wikipedia.org/wiki/Latin-1_Supplement
+
+    Args:
+        label (Column): Column containing the label to be translated.
+
+    Returns:
+        Column: Column containing the translated label.
+    """
+    return (
+        f.translate(
+            label,
+            "àèìòùáéíóúâêîôûäëïöüÀÈÌÒÙÁÉÍÓÚÂÊÎÔÛÄËÏÖÜãåõøÃÅÕØçñýÇÑÝ",
+            "aeiouaeiouaeiouaeiouAEIOUAEIOUAEIOUAEIOUaaooAAOOcnyCNY"
+        )
+    )
+
+def get_alternative_translations(label: Column) -> Column:
+    """Provides an array of labels translated in two different ways.
+
+    Non-latin alphabet characters in labels should be translated, but 
+    special characters should not always be translated 
+    as some labels contain special characters due to character encoding mismatches.
+    Labels are processed both ways to account for this.
+
+    Example label that should be translated: 
+    Papillon-Lefèvre syndrome
+
+    Example label that should be not translated (special characters will be dropped in downstream steps): 
+    small, protruding, ‚Äúcup-shaped‚Äù ears
+
+    Args:
+        label (Column): Column containing the label to be processed.
+
+    Returns:
+        Column: Column containing array of alternative translations.
+    """
+    return (
+        f.array(
+            translate_special_characters(translate_greek_alphabet(label)),
+            translate_greek_alphabet(label)
         )
     )
 
