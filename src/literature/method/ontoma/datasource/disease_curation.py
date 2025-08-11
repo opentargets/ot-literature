@@ -23,12 +23,14 @@ class OpenTargetsDiseaseCuration:
     @classmethod
     def as_label_lut(
         cls: type[OpenTargetsDiseaseCuration], 
-        disease_curation: DataFrame
+        disease_curation: DataFrame,
+        disease_index: DataFrame
     ) -> RawEntityLUT:
         """Generate disease label lookup table from the Open Targets disease curation table.
 
         Args:
             disease_curation (DataFrame): Open Targets disease curation table.
+            disease_index (DataFrame): Open Targets disease index.
         
         Returns:
             RawEntityLUT: Disease label lookup table.
@@ -75,6 +77,12 @@ class OpenTargetsDiseaseCuration:
                     f.col("entity.nlpPipelineTrack").alias("nlpPipelineTrack"),
                     f.lit("DS").alias("entityType"),
                     f.lit("label").alias("entityKind")
+                )
+                # only retain entityIds that are in the disease index
+                .join(
+                    disease_index.select(f.col("id").alias("entityId")).distinct(),
+                    on="entityId",
+                    how="inner"
                 )
                 # cleanup
                 .filter((f.col("entityId").isNotNull()) & (f.length("entityId") > 0))
