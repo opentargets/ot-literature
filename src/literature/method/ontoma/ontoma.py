@@ -9,15 +9,14 @@ from typing import TYPE_CHECKING
 import pyspark.sql.functions as f
 from pyspark.sql import Window
 
-from src.literature.method.ontoma.index_parsers import (
-    extract_disease_entities,
-    extract_target_entities,
-    extract_drug_entities
+from src.literature.method.ontoma.common.utils import (
+    get_alternative_translations,
+    clean_disease_label,
+    format_identifier
 )
-from src.literature.method.ontoma.utils import (
-    translate_special_characters,
-    clean_disease_label
-)
+from src.literature.method.ontoma.dataset.raw_entity_lut import RawEntityLUT
+from src.literature.method.ontoma.dataset.normalised_entity_lut import NormalisedEntityLUT
+from src.literature.method.ontoma.dataset.ready_entity_lut import ReadyEntityLUT
 from src.literature.method.ontoma.nlp_pipeline import NLPPipeline
 
 if TYPE_CHECKING:
@@ -28,38 +27,36 @@ if TYPE_CHECKING:
 class OnToma:
     """Class to initialise an entity lookup table for mapping entities."""
 
-    disease_index: DataFrame | None = None
-    target_index: DataFrame | None = None
-    drug_index: DataFrame | None = None
-    _entity_lut: DataFrame | None = field(init=False, default=None)
+    entity_lut_list: list[RawEntityLUT]
+    _entity_lut: ReadyEntityLUT | None = field(init=False, default=None)
 
     def __post_init__(self: OnToma) -> None:
         """Post init.
 
-        Initialises an entity lookup table for mapping entities using the index(es) provided.
+        Initialises an entity lookup table for mapping entities using the list of entity lookup tables provided.
 
         Raises:
-            ValueError: When no index is provided.
+            TypeError: When entity_lut_list is not a list or when elements of entity_lut_list are not RawEntityLUT.
+            ValueError: When entity_lut_list is empty.
         """
         # validate the input
-        if (
-            self.disease_index is None 
-            and self.target_index is None 
-            and self.drug_index is None
-        ):
-            raise ValueError("At least one index must be provided.")
-    
-        # extract entities to generate entity lookup tables using index-specific functions
-        entity_luts = self._extract_index_entities()
+        if not isinstance(self.entity_lut_list, list):
+            raise TypeError("entity_lut_list must be a list.")
+        
+        if not self.entity_lut_list:
+            raise ValueError("entity_lut_list must contain at least one element.")
+        
+        if not all(isinstance(entity_lut, RawEntityLUT) for entity_lut in self.entity_lut_list):
+            raise TypeError("Each entity_lut must be a RawEntityLUT.")
 
         # concatenate entity lookup tables for downstream processing
-        self._entity_lut = self._concatenate_entity_luts(entity_luts)
+        raw_entity_lut = self._concatenate_entity_luts(self.entity_lut_list)
 
         # normalise the entity lookup table using an NLP pipeline
-        self._entity_lut = self._normalise_entities(self._entity_lut)
+        normalised_entity_lut = self._normalise_entity_lut(raw_entity_lut)
 
         # post-processing to get relevant entity ids for each entity label
-        self._entity_lut = self._get_relevant_entity_ids(self._entity_lut)
+        self._entity_lut = self._get_relevant_entity_ids(normalised_entity_lut)
 
     @property
     def df(self: OnToma) -> DataFrame:
@@ -68,45 +65,43 @@ class OnToma:
         Returns:
             DataFrame: Entity lookup table initialised in the post init.
         """
-        return self._entity_lut
-        
-    def _extract_index_entities(self: OnToma) -> list[DataFrame]:
-        """Extract entities to generate entity lookup tables using functions specific for each index.
-
-        Returns:
-            list[DataFrame]: List of entity lookup tables containing extracted entities.
-        """
-        # specify function to be used for each index
-        index_function_dict = {
-            "disease_index": (self.disease_index, extract_disease_entities),
-            "target_index": (self.target_index, extract_target_entities),
-            "drug_index": (self.drug_index, extract_drug_entities)
-        }
-
-        return [
-            function(index) 
-            for name, (index, function) in index_function_dict.items() 
-            if index is not None
-        ]
+        return self._entity_lut.df
     
     @staticmethod
-    def _concatenate_entity_luts(lut_list: list[DataFrame]) -> DataFrame:
-        """Concatenate entity lookup tables.
+    def _concatenate_entity_luts(lut_list: list[RawEntityLUT]) -> RawEntityLUT:
+        """Concatenate raw entity lookup tables.
 
         Args:
-            lut_list (list[DataFrame]): List of entity lookup tables to be concatenated.
+            lut_list (list[RawEntityLUT]): List of raw entity lookup tables to be concatenated.
 
         Returns:
-            DataFrame: Concatenated entity lookup table.
+            RawEntityLUT: Concatenated raw entity lookup table.
         """
         if len(lut_list) == 1:
             return lut_list[0]
         
-        return reduce(lambda lut1, lut2: lut1.unionByName(lut2), lut_list)
+        return reduce(lambda lut1, lut2: RawEntityLUT(lut1.df.unionByName(lut2.df)), lut_list)
 
+    def _normalise_entity_lut(self: OnToma, raw_entity_lut: RawEntityLUT) -> NormalisedEntityLUT:
+        """Wrapper for applying the _normalise_entities function to entity lookup tables.
+
+        Args:
+            raw_entity_lut (RawEntityLUT): Raw entity lookup table containing entity labels to be normalised.
+
+        Returns:
+            NormalisedEntityLUT: Normalised entity lookup table containing normalised entity labels.
+        """
+        return NormalisedEntityLUT(
+            _df=(
+                self._normalise_entities(raw_entity_lut.df)
+                .filter(f.col("entityLabelNormalised").isNotNull() & (f.length("entityLabelNormalised") > 0))
+            ),
+            _schema=NormalisedEntityLUT.get_schema()
+        )
+    
     @staticmethod
     def _normalise_entities(df: DataFrame) -> DataFrame:
-        """Normalise entities using NLP pipeline.
+        """Normalise entities using an NLP pipeline.
 
         The output column selected is determined by the NLP pipeline type specified.
 
@@ -144,62 +139,66 @@ class OnToma:
                     )
                 )
             )
-            .drop("finished_term", "finished_symbol", "nlpPipelineTrack", "entityLabel")
-            .filter(f.col("entityLabelNormalised").isNotNull() & (f.length("entityLabelNormalised") > 0))
+            .drop("finished_term", "finished_symbol") #, "nlpPipelineTrack", "entityLabel")
         )
     
     @staticmethod
-    def _get_relevant_entity_ids(df: DataFrame) -> DataFrame:
+    def _get_relevant_entity_ids(normalised_entity_lut: NormalisedEntityLUT) -> ReadyEntityLUT:
         """Get relevant entity ids for each entity label.
 
         Args:
-            df (DataFrame): DataFrame containing all entity ids for each entity label.
+            normalised_entity_lut (NormalisedEntityLUT): Normalised entity lookup table containing all entity ids for each entity label.
 
         Returns:
-            DataFrame: DataFrame containing only the relevant entity ids for each entity label.
+            ReadyEntityLUT: Entity lookup table containing only the relevant entity ids for each entity label, ready to be used for entity mapping.
 
         """
-        w = Window.partitionBy("entityType", "entityLabelNormalised").orderBy(f.col("entityScore").desc())
+        w = Window.partitionBy("entityKind", "entityType", "entityLabelNormalised").orderBy(f.col("entityScore").desc())
 
-        return (
-            df
-            .withColumn("entityRank", f.dense_rank().over(w))
-            .filter(f.col("entityRank") == 1)
-            .groupBy(f.col("entityType"), f.col("entityLabelNormalised"))
-            .agg(f.collect_set(f.col("entityId")).alias("entityIds"))
+        return ReadyEntityLUT(
+            _df=(
+                normalised_entity_lut.df
+                .withColumn("entityRank", f.dense_rank().over(w))
+                .filter(f.col("entityRank") == 1)
+                .groupBy("entityKind", "entityType", "entityLabelNormalised")
+                .agg(f.collect_set(f.col("entityId")).alias("entityIds"))
+            ),
+            _schema=ReadyEntityLUT.get_schema()
         )
     
     @staticmethod
-    def _validate_entity_types(
+    def _check_mapping_compatibility(
         lut: DataFrame, 
         df: DataFrame, 
-        type_col_name: str
+        lut_col_name: str,
+        df_col_name: str
     ) -> bool:
-        """Check if all the entity types in the provided dataframe are in the entity lookup table.
+        """Check if the entity lookup table can be used to map the entities in the provided dataframe.
 
         Args:
             lut (DataFrame): The entity lookup table.
             df (DataFrame): The provided dataframe.
-            type_col_name (str): Name of the column containing the entity types.
+            lut_col_name (str): Name of the column containing the entity property in the entity lookup table.
+            df_col_name (str): Name of the column containing the entity property in the provided dataframe.
 
         Returns:
-            bool: True if all the entity types are in the entity lookup table, False otherwise.
+            bool: True if all the entity properties are in the entity lookup table, False otherwise.
         """
-        lut_types = lut.select("entityType").distinct().collect()
+        lut_properties = lut.select(lut_col_name).distinct().collect()
 
-        df_types = df.select(type_col_name).distinct().collect()
+        df_properties = df.select(df_col_name).distinct().collect()
 
-        return all(val in lut_types for val in df_types)
+        return all(val in lut_properties for val in df_properties)
     
     @staticmethod
-    def _extract_input_entities(
+    def _extract_query_entity_labels(
         df: DataFrame,
         label_col_name: str,
         type_col_name: str,
     ) -> DataFrame:
-        """Extract entities from the provided dataframe.
+        """Extract query entity labels from the provided dataframe.
 
-        Entities are set up for normalisation via both the term and symbol tracks of the nlp pipeline.
+        Entity labels are set up for normalisation via both the term and symbol tracks of the NLP pipeline.
 
         Args:
             df (DataFrame): DataFrame containing entity labels to be extracted.
@@ -207,23 +206,54 @@ class OnToma:
             type_col_name (str): Name of the column containing the type of the entity label.
         
         Returns:
-            DataFrame: DataFrame with additional columns containing entity label and NLP pipeline track.
+            DataFrame: DataFrame with additional columns containing entity string and NLP pipeline track.
+        """
+        return (
+            df
+            # translate non-latin alphabet characters, taking into account that
+            # labels that contain special characters should not always be translated
+            .withColumn(
+                "entityLabel",
+                f.explode(get_alternative_translations(f.trim(f.col(label_col_name))))
+            )
+            # all query entities will be normalised using both the term and symbol tracks of the NLP pipeline
+            .withColumn(
+                "nlpPipelineTrack",
+                f.explode(f.array(f.lit("term"), f.lit("symbol")))
+            )
+            # disease labels require an additional cleaning step
+            .withColumn(
+                "entityLabel",
+                f.when(f.col(type_col_name) == "DS", clean_disease_label(f.col("entityLabel")))
+                .otherwise(f.col("entityLabel"))
+            )
+        )
+    
+    @staticmethod
+    def _extract_query_entity_ids(
+        df: DataFrame,
+        id_col_name: str
+    ) -> DataFrame:
+        """Extract query entity ids from the provided dataframe.
+
+        Entity ids are set up for normalisation via the symbol track of the NLP pipeline.
+
+        Args:
+            df (DataFrame): DataFrame containing entity ids to be extracted.
+            id_col_name (str): Name of the column containing the entity ids.
+
+        Returns:
+            DataFrame: DataFrame with additional columns containing entity string and NLP pipeline track.
         """
         return (
             df
             .withColumns(
                 {
-                    # convert greek alphabet to english alphabet
-                    # https://www.rapidtables.com/math/symbols/greek_alphabet.html
-                    "entityLabel": translate_special_characters(f.trim(f.col(label_col_name))),
-                    # all input entities will be normalised using both the term and symbol tracks of the nlp pipeline
-                    "nlpPipelineTrack": f.explode(f.array(f.lit("term"), f.lit("symbol")))
+                    # format ids to be consistent
+                    "entityLabel": format_identifier(f.upper(f.trim(f.col(id_col_name)))),
+                    # all query ids will be normalised using the symbol track of the NLP pipeline
+                    "nlpPipelineTrack": f.lit("symbol")
                 }
-            )
-            .withColumn(
-                "entityLabel",
-                f.when(f.col(type_col_name) == "DS", clean_disease_label(f.col("entityLabel")))
-                .otherwise(f.col("entityLabel"))
             )
         )
 
@@ -231,7 +261,8 @@ class OnToma:
         self: OnToma, 
         df: DataFrame, 
         result_col_name: str,
-        label_col_name: str, 
+        entity_col_name: str, 
+        entity_kind: str,
         type_col_name: str | None = None, 
         type_col: Column | None = None
      ) -> DataFrame:
@@ -246,7 +277,8 @@ class OnToma:
         Args:
             df (DataFrame): DataFrame containing entity labels to be mapped.
             result_col_name (str): Name of the column for the result.
-            label_col_name (str): Name of the column containing the entity labels.
+            entity_col_name (str): Name of the column containing the entity labels.
+            entity_kind (str): Kind (label or id) of the entity label.
             type_col_name (str | None): Name of the column containing the type of the entity label.
             type_col (Column | None): Column containing the type of the entity label.
 
@@ -273,11 +305,21 @@ class OnToma:
             df = df.withColumn(type_col_name, type_col)
 
         # check if all the entity types to be mapped are in the entity lookup table
-        if not self._validate_entity_types(self.df, df, type_col_name):
+        if not self._check_mapping_compatibility(self.df, df, "entityType", type_col_name):
             raise ValueError("Unable to map the provided entity type(s).")
+        
+        # add kind information to the input dataframe
+        df = df.withColumn("entityKind", f.lit(entity_kind))
+
+        # check if all the entity kinds to be mapped are in the entity lookup table
+        if not self._check_mapping_compatibility(self.df, df, "entityKind", "entityKind"):
+            raise ValueError("Unable to map the provided entity kind(s).")
     
         # extract entities from input dataframe
-        extracted_entities = self._extract_input_entities(df, label_col_name, type_col_name)
+        if entity_kind == "label":
+            extracted_entities = self._extract_query_entity_labels(df, entity_col_name, type_col_name)
+        if entity_kind == "id":
+            extracted_entities = self._extract_query_entity_ids(df, entity_col_name)
 
         # normalise entities and join with entity lookup table
         mapped_entities = (
@@ -288,10 +330,11 @@ class OnToma:
                     .select(
                         f.col("entityLabelNormalised"),
                         f.col("entityType").alias(type_col_name),
+                        f.col("entityKind"),
                         f.col("entityIds")
                     )
                 ),
-                on=["entityLabelNormalised", type_col_name],
+                on=["entityLabelNormalised", type_col_name, "entityKind"],
                 how="left"
             )
         )
