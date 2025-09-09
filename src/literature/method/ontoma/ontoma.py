@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+import os
 from dataclasses import dataclass, field
 from functools import reduce
 from typing import TYPE_CHECKING
@@ -20,13 +22,22 @@ from src.literature.method.ontoma.dataset.ready_entity_lut import ReadyEntityLUT
 from src.literature.method.ontoma.nlp_pipeline import NLPPipeline
 
 if TYPE_CHECKING:
-    from pyspark.sql import Column, DataFrame
+    from pyspark.sql import Column, DataFrame, SparkSession
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+handler = logging.StreamHandler()
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+handler.setFormatter(formatter)
+logger.addHandler(handler)
 
 
 @dataclass
 class OnToma:
     """Class to initialise an entity lookup table for mapping entities."""
 
+    spark: SparkSession
+    cache_dir: str
     entity_lut_list: list[RawEntityLUT]
     _entity_lut: ReadyEntityLUT | None = field(init=False, default=None)
 
@@ -39,24 +50,40 @@ class OnToma:
             TypeError: When entity_lut_list is not a list or when elements of entity_lut_list are not RawEntityLUT.
             ValueError: When entity_lut_list is empty.
         """
-        # validate the input
-        if not isinstance(self.entity_lut_list, list):
-            raise TypeError("entity_lut_list must be a list.")
-        
-        if not self.entity_lut_list:
-            raise ValueError("entity_lut_list must contain at least one element.")
-        
-        if not all(isinstance(entity_lut, RawEntityLUT) for entity_lut in self.entity_lut_list):
-            raise TypeError("Each entity_lut must be a RawEntityLUT.")
+        # if cache dir exists, load the entity lookup table
+        if os.path.exists(self.cache_dir):
+            self._entity_lut = ReadyEntityLUT(
+                _df=self.spark.read.parquet(self.cache_dir),
+                _schema=ReadyEntityLUT.get_schema()
+            )
+            logger.info(f"Loaded entity lookup table from {self.cache_dir}.")
+            
+        # otherwise, generate and save the entity lookup table
+        else:
+            logger.info(f"{self.cache_dir} does not exist. Generating entity lookup table.")
+            
+            # validate the input
+            if not isinstance(self.entity_lut_list, list):
+                raise TypeError("entity_lut_list must be a list.")
+            
+            if not self.entity_lut_list:
+                raise ValueError("entity_lut_list must contain at least one element.")
+            
+            if not all(isinstance(entity_lut, RawEntityLUT) for entity_lut in self.entity_lut_list):
+                raise TypeError("Each entity_lut must be a RawEntityLUT.")
 
-        # concatenate entity lookup tables for downstream processing
-        raw_entity_lut = self._concatenate_entity_luts(self.entity_lut_list)
+            # concatenate entity lookup tables for downstream processing
+            raw_entity_lut = self._concatenate_entity_luts(self.entity_lut_list)
 
-        # normalise the entity lookup table using an NLP pipeline
-        normalised_entity_lut = self._normalise_entity_lut(raw_entity_lut)
+            # normalise the entity lookup table using an NLP pipeline
+            normalised_entity_lut = self._normalise_entity_lut(raw_entity_lut)
 
-        # post-processing to get relevant entity ids for each entity label
-        self._entity_lut = self._get_relevant_entity_ids(normalised_entity_lut)
+            # post-processing to get relevant entity ids for each entity label
+            self._entity_lut = self._get_relevant_entity_ids(normalised_entity_lut)
+
+            # save the entity lookup table
+            self._entity_lut.df.write.parquet(self.cache_dir)
+            logger.info(f"Saved entity lookup table to {self.cache_dir}.")
 
     @property
     def df(self: OnToma) -> DataFrame:
