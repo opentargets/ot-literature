@@ -121,6 +121,12 @@
         "type": "string",
         "nullable": true,
         "metadata": {}
+      },
+      {
+        "name": "traceSource",
+        "type": "string",
+        "nullable": true,
+        "metadata": {}
       }
     ],
     "type": "struct"

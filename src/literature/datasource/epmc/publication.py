@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
+from loguru import logger
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pyspark.sql.functions as f
 
-from src.literature.common.schemas import parse_spark_schema
-from src.literature.common.session import Session
-from src.literature.dataset.publication import Publication
+from literature.common.schemas import parse_spark_schema
+from literature.common.session import Session
+from literature.dataset.publication import Publication
 
 if TYPE_CHECKING:
     from pyspark.sql import DataFrame
@@ -43,6 +44,7 @@ class EPMCPublication:
             session.spark.read.schema(cls.defined_schema)
             .json(publication_path)
             .withColumn("kind", f.lit(publication_kind))
+            .withColumn("traceSource", f.input_file_name())
         )
 
     @staticmethod
@@ -99,14 +101,14 @@ class EPMCPublication:
         )
     
     @staticmethod
-    def _get_most_recent_publications(df: DataFrame) -> Publication:
+    def _get_most_recent_publications(df: DataFrame) -> DataFrame:
         """Deduplicate publications by taking the publication with the most recent timestamp.
 
         Args:
             df (DataFrame): DataFrame with publications for deduplication.
         
         Returns:
-            Publication: Publication dataset with deduplicated set of publications.
+            DataFrame: DataFrame with deduplicated set of publications.
         """
         # add timestamp column
         timestamped = (
@@ -117,31 +119,28 @@ class EPMCPublication:
         # get most recent version of each publication
         most_recent_publications = (
             timestamped
-            .groupBy(f.col("pmcid"), f.col("pmid"))
+            .groupBy(f.col("pmid"), f.col("pmcid"))
             .agg(f.max(f.col("int_timestamp")).alias("max_timestamp"))
         )
 
         # get other relevant fields for each most recent publication
-        return Publication(
-            _df=(
-                most_recent_publications
-                .select(
-                    f.col("pmcid").alias("mrp_pmcid"), 
-                    f.col("pmid").alias("mrp_pmid"), 
-                    f.col("max_timestamp")
-                )
-                .join(
-                    timestamped,
-                    on=[
-                        f.col("mrp_pmcid").eqNullSafe(timestamped.pmcid) &
-                        f.col("mrp_pmid").eqNullSafe(timestamped.pmid) &
-                        f.col("max_timestamp").eqNullSafe(timestamped.int_timestamp)
-                    ],
-                    how="left"
-                )
-                .drop("mrp_pmcid", "mrp_pmid", "max_timestamp", "int_timestamp")
-            ),
-            _schema=Publication.get_schema()
+        return (
+            most_recent_publications
+            .select(
+                f.col("pmid").alias("mrp_pmid"),
+                f.col("pmcid").alias("mrp_pmcid"),
+                f.col("max_timestamp")
+            )
+            .join(
+                timestamped,
+                on=[
+                    f.col("mrp_pmid").eqNullSafe(timestamped.pmid) &
+                    f.col("mrp_pmcid").eqNullSafe(timestamped.pmcid) &
+                    f.col("max_timestamp").eqNullSafe(timestamped.int_timestamp)
+                ],
+                how="left"
+            )
+            .drop("mrp_pmcid", "mrp_pmid", "max_timestamp", "int_timestamp", "timestamp", "kind")
         )
     
     @classmethod
@@ -153,6 +152,8 @@ class EPMCPublication:
     ) -> Publication:
         """Read publications from the specified filepath.
 
+        Publications are partitioned by pmid.
+
         Args:
             session (Session): Spark Session object.
             epmc_path (str): Path to EPMC publications.
@@ -161,13 +162,24 @@ class EPMCPublication:
         Returns:
             Publication: Publication dataset with EPMC publications.
         """
+        logger.info(f'load fulltexts from {epmc_path}')
         fulltexts = cls._read_in_with_schema(session, epmc_path, "fulltext")
         
+        logger.info('annotate fulltexts with pmid')
         processed_fulltexts = cls._annotate_fulltexts_with_pmid(fulltexts, lut)
 
+        logger.info(f'load abstracts from {epmc_path}')
         abstracts = cls._read_in_with_schema(session, epmc_path, "abstract")
 
+        logger.info('merge abstracts with fulltexts')
         all_publications = cls._merge_abstracts_with_fulltexts(abstracts, processed_fulltexts)
         
-        return cls._get_most_recent_publications(all_publications)
+        logger.info('get most recent publications')
+        return Publication(
+            _df=(
+                cls._get_most_recent_publications(all_publications)
+                .repartition(f.col("pmid"))
+            ),
+            _schema=Publication.get_schema()
+        )
     
