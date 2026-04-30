@@ -7,7 +7,7 @@ requires-python = ">=3.10"
 dependencies = [
     "ipykernel>=6.29.5",
     "numpy>=2.2.5",
-    "pyspark==3.3.4",
+    "pyspark==3.5.7",
     "pytest>=8.3.5",
     "spark-nlp>=5.5.3",
 ]
