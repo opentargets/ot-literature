@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from ontoma import OnToma
+from loguru import logger
 from typing import TYPE_CHECKING
 
 import pyspark.sql.functions as f
 
-from src.literature.common.schemas import parse_spark_schema
-from src.literature.dataset.dataset import Dataset
-from src.literature.dataset.entity import Entity
+from literature.common.schemas import parse_spark_schema
+from literature.dataset.dataset import Dataset
+from literature.dataset.match_mapped import MatchMapped
+from literature.common.session import Session
 
 if TYPE_CHECKING:
     from pyspark.sql.types import StructType
@@ -17,7 +20,7 @@ if TYPE_CHECKING:
 
 @dataclass
 class Match(Dataset):
-    """ Match dataset.
+    """Match dataset.
 
     This dataset describes matches extracted from a Publication dataset.
     """
@@ -31,62 +34,46 @@ class Match(Dataset):
         """
         return parse_spark_schema("match.json")
     
-    def extract_entities(self: Match) -> Entity:
-        """Extract entities from matches for normalisation using NLP.
-        
+    def map_labels(
+        self: Match,
+        session: Session,
+        label_lut_path: str,
+        label_col_name: str,
+        type_col_name: str
+    ) -> MatchMapped:
+        """Maps labels using the provided label lookup table.
+
+        If there are multiple mappings, the results are exploded accordingly.
+
+        Args:
+            session (Session): Spark Session object.
+            label_lut_path (str): Path to the label lookup table.
+            label_col_name (str): Name of the column containing the label.
+            type_col_name (str): Name of the column containing the label type.
+
         Returns:
-            Entity: Entity dataset.
+            MatchMapped: Dataset with mapped labels.
         """
-        return Entity(
-            _df=(
-                self.df
-                .select(f.explode("matches").alias("match"))
-                .select(
-                    f.col("match.label").alias("entityLabelFromSource"), 
-                    f.col("match.type").alias("entityType")
-                )
-                # convert greek alphabet to english alphabet
-                # https://www.rapidtables.com/math/symbols/greek_alphabet.html
-                .withColumn(
-                    "entityLabelTranslated", 
-                    f.translate(
-                        f.col("entityLabelFromSource"), 
-                        "αβγδεζηικλμνξπτυω", 
-                        "abgdezhiklmnxptuo"
-                    )
-                )
-                # create array of structs depending on nlpPipelineTrack
-                .withColumn(
-                    "entities",
-                    f.when(f.col("entityType") == "DS",
-                        f.array(
-                            f.struct(
-                                f.col("entityLabelTranslated").alias("entityLabel"), 
-                                f.lit("term").alias("nlpPipelineTrack")
-                            )
-                        )
-                    )
-                    .when(f.col("entityType").isin("GP", "CD"),
-                        f.array(
-                            f.struct(
-                                f.col("entityLabelTranslated").alias("entityLabel"), 
-                                f.lit("term").alias("nlpPipelineTrack")
-                            ),
-                            f.struct(
-                                f.col("entityLabelTranslated").alias("entityLabel"), 
-                                f.lit("symbol").alias("nlpPipelineTrack")
-                            )
-                        )
-                    )
-                )
-                .withColumn("entity", f.explode("entities"))
-                .select(
-                    f.col("entityLabelFromSource"), 
-                    f.col("entityType"), 
-                    f.col("entity.entityLabel").alias("entityLabel"),
-                    f.col("entity.nlpPipelineTrack").alias("nlpPipelineTrack")
-                )
-            ),
-            _schema=Entity.get_schema()
+        logger.info(f'load label lookup table from {label_lut_path}')
+        label_lut = OnToma(spark=session.spark, cache_dir=label_lut_path)
+
+        logger.info('map labels')
+        mapped_matches = label_lut.map_entities(
+            df=self.df,
+            result_col_name="entityIds",
+            entity_col_name=label_col_name,
+            entity_kind="label",
+            type_col_name=type_col_name,
+            include_normalised_entities=True,
+            include_entity_source=True
         )
-    
+
+        logger.info('explode results')
+        return MatchMapped(
+            _df=(
+                mapped_matches
+                .withColumn("mappedId", f.explode_outer(f.array_distinct("entityIds.entityId")))
+                .withColumn("isMapped", f.col("mappedId").isNotNull())
+            ),
+            _schema=MatchMapped.get_schema()
+        )

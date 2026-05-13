@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+from loguru import logger
 from typing import TYPE_CHECKING
 
 import pyspark.sql.functions as f
 
-from src.literature.common.session import Session
+from literature.common.session import Session
 
 if TYPE_CHECKING:
     from pyspark.sql import DataFrame
@@ -43,4 +44,5 @@ class PublicationIdLUT:
         Returns:
             DataFrame: DataFrame with the parsed publication id lookup table.
         """
+        logger.info(f'parse publication id lut from {csv_path}')
         return cls._lut_parser(session.spark.read.csv(csv_path, header=True))

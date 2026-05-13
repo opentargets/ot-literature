@@ -111,6 +111,66 @@
         "type": "string",
         "nullable": true,
         "metadata": {}
+      },
+      {
+        "name": "entityLabelNormalised",
+        "type": "string",
+        "nullable": true,
+        "metadata": {}
+      },
+      {
+        "name": "entityIds",
+        "type": {
+          "containsNull": true,
+          "elementType": {
+            "fields": [
+                {
+                    "name": "entityId",
+                    "type": "string",
+                    "nullable": true,
+                    "metadata": {}
+                },
+                {
+                    "name": "entitySource",
+                    "type": "string",
+                    "nullable": true,
+                    "metadata": {}
+                }
+            ],
+            "type": "struct"
+          },
+          "type": "array"
+        },
+        "nullable": true,
+        "metadata": {}
+      },
+      {
+        "name": "mappedId",
+        "type": "string",
+        "nullable": true,
+        "metadata": {}
+      },
+      {
+        "name": "isMapped",
+        "type": "boolean",
+        "nullable": true,
+        "metadata": {}
+      },
+      {
+        "name": "validReasons",
+        "type": {
+          "containsNull": true,
+          "elementType": "string",
+          "type": "array"
+        },
+        "nullable": true,
+        "metadata": {}
+      },
+      {
+        "name": "isValid",
+        "type": "boolean",
+        "nullable": true,
+        "metadata": {}
       }
     ],
     "type": "struct"
