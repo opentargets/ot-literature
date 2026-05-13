@@ -10,7 +10,7 @@ from pyspark.sql import DataFrame
 from pyspark.sql import types as t
 from typing_extensions import Self
 
-from src.literature.common.schemas import SchemaValidationError, compare_struct_schemas
+from literature.common.schemas import SchemaValidationError, compare_struct_schemas
 
 if TYPE_CHECKING:
     from pyspark.sql.types import StructType

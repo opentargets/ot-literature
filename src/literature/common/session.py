@@ -25,13 +25,15 @@ class Session:
         config=(
             SparkConf()
             .set("spark.driver.memory", "2g")
+            .set("spark.executor.memory", "8g")
         )
 
         if for_nlp:
             config = (
                 SparkConf()
                 .set("spark.driver.memory", "2g")
-                .set("spark.jars.packages", "com.johnsnowlabs.nlp:spark-nlp_2.12:5.0.0")
+                .set("spark.executor.memory", "8g")
+                .set("spark.jars.packages", "com.johnsnowlabs.nlp:spark-nlp_2.12:6.1.3")
             )
 
         self.spark = (

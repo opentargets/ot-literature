@@ -8,7 +8,7 @@ from collections import defaultdict
 
 from pyspark.sql.types import ArrayType, StructType
 
-from src.literature import schemas
+from literature import schemas
 
 
 class SchemaValidationError(Exception):
