@@ -194,12 +194,12 @@ class MatchMapped(Dataset):
         return self._resolve_ambiguous_mappings(annotated_df, valid_id_df)
 
     @staticmethod
-    def _section_to_score(section: Column, default_score: int = 1) -> Column:
+    def _section_to_score(section: Column, default_score: float = 1) -> Column:
         """Determine score based on section as specified in the config.
 
         Args:
             section (Column): Column containing section.
-            default_score (int): Score to assign if section is not found in the config.
+            default_score (float): Score to assign if section is not found in the config.
 
         Returns:
             Column: Column containing score.
@@ -210,7 +210,7 @@ class MatchMapped(Dataset):
         # if section matches pattern, assign score
         for row in reversed(MatchMapped.SECTION_TO_SCORE_CONFIG):
             pattern = r"\b(" + "|".join(row["section"]) + r")\b"
-            score = f.when(section.rlike(pattern), row["score"]).otherwise(score)
+            score = f.when(section.rlike(pattern), float(row["score"])).otherwise(score)
 
         return score
 
@@ -260,7 +260,7 @@ class MatchMapped(Dataset):
                     f.col("left.organisms").alias("organisms"),
                     f.col("left.section").alias("section"),
                     f.col("left.text").alias("text"),
-                    f.col("left.trace_source").alias("trace_source"),
+                    f.col("left.traceSource").alias("traceSource"),
                     # fields from left dataset
                     f.col("left.label").alias("label1"),
                     f.col("left.type").alias("type1"),

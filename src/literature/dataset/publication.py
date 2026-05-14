@@ -42,7 +42,7 @@ class Publication(Dataset):
         return Match(
             _df=(
                 self.df
-                .withColumn("section", f.lower("section"))
+                .filter(f.col("pmid").isNotNull())
                 # pubDate derivatives
                 .withColumn("date", f.to_date("pubDate"))
                 .withColumn("year", f.year("date"))
@@ -56,6 +56,8 @@ class Publication(Dataset):
                 .withColumn("match", f.explode("matches"))
                 .select("*", "match.*")
                 .drop("matches", "match")
+                .filter(f.col("section").isNotNull())
+                .withColumn("section", f.lower("section"))
             ),
             _schema=Match.get_schema()
         )

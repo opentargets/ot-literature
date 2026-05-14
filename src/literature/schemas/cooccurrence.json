@@ -153,6 +153,12 @@
         "type": "boolean",
         "nullable": true,
         "metadata": {}
+      },
+      {
+        "name": "evidenceScore",
+        "type": "double",
+        "nullable": true,
+        "metadata": {}
       }
     ],
     "type": "struct"
