@@ -133,7 +133,7 @@ class MatchMapped(Dataset):
         """
         return (
             df
-            .filter(f.col("isValid") == True)
+            .filter(f.col("isValid"))
             .select("pmid", "mappedId")
             .distinct()
             .withColumn("isDisambiguous", f.lit(True))
@@ -159,7 +159,7 @@ class MatchMapped(Dataset):
                     "validReasons", 
                     MatchMapped._update_flag(
                         f.col("validReasons"),
-                        (f.col("isDisambiguous") == True) & (f.col("isValid") == False),
+                        f.col("isDisambiguous") & ~f.col("isValid"),
                         IdValidReason.DISAMBIGUATED
                     )
                 )
@@ -182,7 +182,7 @@ class MatchMapped(Dataset):
             MatchMapped: Dataset with disambiguated mappings.
         """
         # only process successfully mapped matches
-        mapped_subset = self.df.filter(f.col("isMapped") == True)
+        mapped_subset = self.df.filter(f.col("isMapped"))
 
         logger.info('identify valid ids')
         annotated_df = self._identify_valid_ids(mapped_subset, trusted_sources)
@@ -204,13 +204,11 @@ class MatchMapped(Dataset):
         Returns:
             Column: Column containing score.
         """
-        score = f.lit(default_score)
+        score = f.lit(float(default_score))
 
-        # go through config from lowest to highest score
-        # if section matches pattern, assign score
+        # iterate lowest-to-highest priority so the highest-priority match wins
         for row in reversed(MatchMapped.SECTION_TO_SCORE_CONFIG):
-            pattern = r"\b(" + "|".join(row["section"]) + r")\b"
-            score = f.when(section.rlike(pattern), float(row["score"])).otherwise(score)
+            score = f.when(section.isin(row["section"]), float(row["score"])).otherwise(score)
 
         return score
 
@@ -235,16 +233,17 @@ class MatchMapped(Dataset):
                         self.df
                         .filter(f.col("type") == type2)
                         .select(
-                            "pmid", "text", 
-                            "label", "type", 
-                            "startInSentence", "endInSentence", 
+                            "pmid", "sectionStart", "sectionEnd",
+                            "label", "type",
+                            "startInSentence", "endInSentence",
                             "entityLabelNormalised", "mappedId"
                         )
                         .alias("right")
                     ),
                     on=[
                         (f.col('left.pmid') == f.col('right.pmid')) &
-                        (f.col('left.text') == f.col('right.text'))
+                        (f.col('left.sectionStart') == f.col('right.sectionStart')) &
+                        (f.col('left.sectionEnd') == f.col('right.sectionEnd'))
                     ],
                     how='inner'
                 )
