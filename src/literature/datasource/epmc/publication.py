@@ -19,8 +19,9 @@ if TYPE_CHECKING:
 class EPMCPublication:
     """Class to process publications from Europe PMC."""
 
-    # schema specifying desired subset of columns
-    defined_schema = parse_spark_schema("publication.json")
+    # schema for reading raw EPMC JSONL files; includes the `timestamp` column
+    # used internally for deduplication and dropped before the final `Publication`.
+    defined_schema = parse_spark_schema("epmc_publication.json")
 
     @classmethod
     def _read_in_with_schema(
