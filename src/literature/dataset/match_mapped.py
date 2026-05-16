@@ -139,24 +139,53 @@ class MatchMapped(Dataset):
             .withColumn("isDisambiguous", f.lit(True))
         )
     
+    # Salt buckets for the disambig left join. Spreads hot (pmid, mappedId) keys
+    # across this many shuffle partitions on the left side; the right side is
+    # exploded by the same factor so each salt bucket has the complete valid_id
+    # relation available. Sized for the observed skew at full-EPMC scale
+    # (56x task-duration skew on stage 142 in run-013); shrink if the right-side
+    # shuffle inflation becomes the new bottleneck.
+    DISAMBIG_SALT_BUCKETS = 32
+
     @staticmethod
-    def _resolve_ambiguous_mappings(df: DataFrame, valid_id_df: DataFrame) -> MatchMapped:
+    def _resolve_ambiguous_mappings(
+        df: DataFrame,
+        valid_id_df: DataFrame,
+        salt_buckets: int = DISAMBIG_SALT_BUCKETS,
+    ) -> MatchMapped:
         """Resolve ambiguous mappings by using a dataframe of valid ids.
+
+        The left join key (pmid, mappedId) is Zipfian on full-EPMC mention data:
+        a handful of (pmid, mappedId) pairs account for a disproportionate share
+        of rows, which funnels each hot key onto a single shuffle partition and
+        creates extreme task-duration skew. To mitigate this we salt the left
+        side with a uniform random bucket, replicate the right side across all
+        salt buckets, and join on the salted key. Cardinality and semantics are
+        preserved because valid_id_df is already distinct on (pmid, mappedId).
 
         Args:
             df (DataFrame): DataFrame containing ambiguous mappings.
             valid_id_df (DataFrame): DataFrame containing only valid ids.
+            salt_buckets (int): Number of salt buckets used to spread hot
+                (pmid, mappedId) keys across shuffle partitions.
 
         Returns:
             MatchMapped: Dataset with resolved mappings.
         """
+        salted_df = df.withColumn(
+            "_salt", (f.rand(seed=42) * salt_buckets).cast("int")
+        )
+        salted_valid_id_df = valid_id_df.withColumn(
+            "_salt", f.explode(f.array(*[f.lit(i) for i in range(salt_buckets)]))
+        )
         return MatchMapped(
             _df=(
-                df
-                .join(valid_id_df, on=["pmid", "mappedId"], how="left")
+                salted_df
+                .join(salted_valid_id_df, on=["pmid", "mappedId", "_salt"], how="left")
+                .drop("_salt")
                 .withColumn("isDisambiguous", f.coalesce(f.col("isDisambiguous"), f.lit(False)))
                 .withColumn(
-                    "validReasons", 
+                    "validReasons",
                     MatchMapped._update_flag(
                         f.col("validReasons"),
                         (f.col("isDisambiguous") == True) & (f.col("isValid") == False),
