@@ -49,6 +49,18 @@ class MatchMapped(Dataset):
         {"score": 1,  "section": ["introduction", "intro", "case study", "case", "appendix", "methods", "other"]},
     ]
 
+    # Salt buckets for shuffles keyed by (pmid, mappedId) in the disambig
+    # pipeline. The key distribution is Zipfian on full-EPMC mention data:
+    # a handful of (pmid, mappedId) pairs account for a disproportionate
+    # share of rows. Without salt the hot pairs funnel into a single
+    # shuffle partition and create extreme task-duration skew. The same
+    # constant is used by `_subset_valid_ids` (two-stage distinct) and
+    # `_resolve_ambiguous_mappings` (salt-and-replicate left join); both
+    # shuffles share the same skew profile. Sized for the observed skew
+    # at full-EPMC scale; shrink if shuffle inflation becomes the new
+    # bottleneck.
+    DISAMBIG_SALT_BUCKETS = 32
+
     @classmethod
     def get_schema(cls: type[MatchMapped]) -> StructType:
         """Provides the schema for the MatchMapped dataset.
@@ -122,11 +134,26 @@ class MatchMapped(Dataset):
         )
     
     @staticmethod
-    def _subset_valid_ids(df: DataFrame) -> DataFrame:
+    def _subset_valid_ids(
+        df: DataFrame,
+        salt_buckets: int = DISAMBIG_SALT_BUCKETS,
+    ) -> DataFrame:
         """Subset for entries with valid ids.
+
+        The distinct() over (pmid, mappedId) is Zipfian-skewed in the same way
+        as the disambig left join: hot pairs funnel into a single shuffle
+        partition and dominate wall-clock. At full-EPMC scale (run-014 stage
+        216) the single-task wait on this distinct was ~20 min while p50 was
+        ~4 min. The fix is a two-stage distinct: salt the rows, distinct on
+        (pmid, mappedId, salt) so hot keys spread across `salt_buckets`
+        partitions, drop the salt, then a small final distinct to collapse the
+        salt-induced duplicates. The second distinct is cheap because its input
+        is bounded by num_distinct * salt_buckets.
 
         Args:
             df (DataFrame): DataFrame with identified valid ids.
+            salt_buckets (int): Number of salt buckets used to spread hot
+                (pmid, mappedId) keys across shuffle partitions.
 
         Returns:
             DataFrame: DataFrame containing only entries with valid ids.
@@ -135,18 +162,13 @@ class MatchMapped(Dataset):
             df
             .filter(f.col("isValid") == True)
             .select("pmid", "mappedId")
+            .withColumn("_salt", (f.rand(seed=42) * salt_buckets).cast("int"))
+            .distinct()
+            .drop("_salt")
             .distinct()
             .withColumn("isDisambiguous", f.lit(True))
         )
     
-    # Salt buckets for the disambig left join. Spreads hot (pmid, mappedId) keys
-    # across this many shuffle partitions on the left side; the right side is
-    # exploded by the same factor so each salt bucket has the complete valid_id
-    # relation available. Sized for the observed skew at full-EPMC scale
-    # (56x task-duration skew on stage 142 in run-013); shrink if the right-side
-    # shuffle inflation becomes the new bottleneck.
-    DISAMBIG_SALT_BUCKETS = 32
-
     @staticmethod
     def _resolve_ambiguous_mappings(
         df: DataFrame,
