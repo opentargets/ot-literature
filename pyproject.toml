@@ -7,7 +7,7 @@ requires-python = ">=3.11,<3.14"
 dependencies = [
     "loguru>=0.7.3",
     "numpy>=2.2.6",
-    "ontoma>=2.4.0",
+    "ontoma>=2.4.1",
     "pyspark==3.5.7",
 ]
 
