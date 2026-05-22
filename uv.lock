@@ -333,7 +333,7 @@ wheels = [
 
 [[package]]
 name = "ontoma"
-version = "2.4.0"
+version = "2.4.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "loguru" },
@@ -341,9 +341,9 @@ dependencies = [
     { name = "pyspark" },
     { name = "spark-nlp" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/31/1f/721aacfa3efd5e6c99c56f381b59880ab8e2e9bb01d271c777de07e73c7f/ontoma-2.4.0.tar.gz", hash = "sha256:ebc0072afd105a37f02025d78644255695fd15fbea2c2b31c0a1d52f25cf8599", size = 27162, upload-time = "2026-05-14T10:27:01.872Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/44/f5/67377d94d1f31fbb88dffc4eabac67bb645175755b7ca1aa607cf1c84982/ontoma-2.4.1.tar.gz", hash = "sha256:0b1a843d5514c0dff96cf7afe55d88b8e6350804699684200d22d1ad57b3f96c", size = 27330, upload-time = "2026-05-22T13:43:10.86Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/79/3d/bf912f0c15dd11457e389534d1993ef034244bed58b5819e9d7a2475920a/ontoma-2.4.0-py3-none-any.whl", hash = "sha256:0e05d774de579ae4638125461191f6ba75f222f47bde9f38878fff9bd4c0d295", size = 38911, upload-time = "2026-05-14T10:27:00.57Z" },
+    { url = "https://files.pythonhosted.org/packages/a9/98/c7cd1cbab085a08951142f3605fca32c53fca1b4712d361cde6fff97575d/ontoma-2.4.1-py3-none-any.whl", hash = "sha256:68b2b48c94eb0ef753f50e2107b6c45ba7f0f917c93368b71e98e46847a71637", size = 39084, upload-time = "2026-05-22T13:43:12.241Z" },
 ]
 
 [[package]]
@@ -369,7 +369,7 @@ dev = [
 requires-dist = [
     { name = "loguru", specifier = ">=0.7.3" },
     { name = "numpy", specifier = ">=2.2.6" },
-    { name = "ontoma", specifier = ">=2.4.0" },
+    { name = "ontoma", specifier = ">=2.4.1" },
     { name = "pyspark", specifier = "==3.5.7" },
 ]
 
