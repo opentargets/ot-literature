@@ -8,6 +8,7 @@ from loguru import logger
 from typing import TYPE_CHECKING
 
 import pyspark.sql.functions as f
+from pyspark.storagelevel import StorageLevel
 
 from literature.common.schemas import parse_spark_schema
 from literature.dataset.dataset import Dataset
@@ -147,8 +148,19 @@ class MatchMapped(Dataset):
         ~4 min. The fix is a two-stage distinct: salt the rows, distinct on
         (pmid, mappedId, salt) so hot keys spread across `salt_buckets`
         partitions, drop the salt, then a small final distinct to collapse the
-        salt-induced duplicates. The second distinct is cheap because its input
-        is bounded by num_distinct * salt_buckets.
+        salt-induced duplicates. The first (salted) distinct carries the heavy,
+        balanced shuffle; the second only re-concentrates each key over the
+        <= num_distinct * salt_buckets rows that survive, so it is skew-free.
+
+        The persist between the two distincts is load-bearing, not just a
+        cache. Without a materialisation barrier Catalyst merges the two
+        adjacent distinct aggregates into a single distinct on (pmid, mappedId)
+        and prunes the salt column entirely (verified via the optimized plan),
+        so the salted shuffle never runs and the skew is unchanged. Persisting
+        forces the salted distinct to execute as its own balanced shuffle on
+        (pmid, mappedId, salt). DISK_ONLY keeps the lineage recomputable on
+        executor loss; a reliable checkpoint would also work but needs a
+        configured checkpoint dir, which the session does not set.
 
         Args:
             df (DataFrame): DataFrame with identified valid ids.
@@ -158,12 +170,18 @@ class MatchMapped(Dataset):
         Returns:
             DataFrame: DataFrame containing only entries with valid ids.
         """
-        return (
+        salted_distinct = (
             df
             .filter(f.col("isValid") == True)
             .select("pmid", "mappedId")
             .withColumn("_salt", (f.rand(seed=42) * salt_buckets).cast("int"))
             .distinct()
+            # barrier: prevents Catalyst from merging the two distincts (which
+            # would prune the salt and collapse this back to one skewed shuffle)
+            .persist(StorageLevel.DISK_ONLY)
+        )
+        return (
+            salted_distinct
             .drop("_salt")
             .distinct()
             .withColumn("isDisambiguous", f.lit(True))
