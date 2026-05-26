@@ -8,6 +8,7 @@ from loguru import logger
 from typing import TYPE_CHECKING
 
 import pyspark.sql.functions as f
+from pyspark.storagelevel import StorageLevel
 
 from literature.common.schemas import parse_spark_schema
 from literature.dataset.dataset import Dataset
@@ -48,6 +49,18 @@ class MatchMapped(Dataset):
         {"score": 2,  "section": ["discussion", "discuss", "conclusion", "concl"]},
         {"score": 1,  "section": ["introduction", "intro", "case study", "case", "appendix", "methods", "other"]},
     ]
+
+    # Salt buckets for shuffles keyed by (pmid, mappedId) in the disambig
+    # pipeline. The key distribution is Zipfian on full-EPMC mention data:
+    # a handful of (pmid, mappedId) pairs account for a disproportionate
+    # share of rows. Without salt the hot pairs funnel into a single
+    # shuffle partition and create extreme task-duration skew. The same
+    # constant is used by `_subset_valid_ids` (two-stage distinct) and
+    # `_resolve_ambiguous_mappings` (salt-and-replicate left join); both
+    # shuffles share the same skew profile. Sized for the observed skew
+    # at full-EPMC scale; shrink if shuffle inflation becomes the new
+    # bottleneck.
+    DISAMBIG_SALT_BUCKETS = 32
 
     @classmethod
     def get_schema(cls: type[MatchMapped]) -> StructType:
@@ -122,41 +135,97 @@ class MatchMapped(Dataset):
         )
     
     @staticmethod
-    def _subset_valid_ids(df: DataFrame) -> DataFrame:
+    def _subset_valid_ids(
+        df: DataFrame,
+        salt_buckets: int = DISAMBIG_SALT_BUCKETS,
+    ) -> DataFrame:
         """Subset for entries with valid ids.
+
+        The distinct() over (pmid, mappedId) is Zipfian-skewed in the same way
+        as the disambig left join: hot pairs funnel into a single shuffle
+        partition and dominate wall-clock. At full-EPMC scale (run-014 stage
+        216) the single-task wait on this distinct was ~20 min while p50 was
+        ~4 min. The fix is a two-stage distinct: salt the rows, distinct on
+        (pmid, mappedId, salt) so hot keys spread across `salt_buckets`
+        partitions, drop the salt, then a small final distinct to collapse the
+        salt-induced duplicates. The first (salted) distinct carries the heavy,
+        balanced shuffle; the second only re-concentrates each key over the
+        <= num_distinct * salt_buckets rows that survive, so it is skew-free.
+
+        The persist between the two distincts is load-bearing, not just a
+        cache. Without a materialisation barrier Catalyst merges the two
+        adjacent distinct aggregates into a single distinct on (pmid, mappedId)
+        and prunes the salt column entirely (verified via the optimized plan),
+        so the salted shuffle never runs and the skew is unchanged. Persisting
+        forces the salted distinct to execute as its own balanced shuffle on
+        (pmid, mappedId, salt). DISK_ONLY keeps the lineage recomputable on
+        executor loss; a reliable checkpoint would also work but needs a
+        configured checkpoint dir, which the session does not set.
 
         Args:
             df (DataFrame): DataFrame with identified valid ids.
+            salt_buckets (int): Number of salt buckets used to spread hot
+                (pmid, mappedId) keys across shuffle partitions.
 
         Returns:
             DataFrame: DataFrame containing only entries with valid ids.
         """
-        return (
+        salted_distinct = (
             df
             .filter(f.col("isValid") == True)
             .select("pmid", "mappedId")
+            .withColumn("_salt", (f.rand(seed=42) * salt_buckets).cast("int"))
+            .distinct()
+            # barrier: prevents Catalyst from merging the two distincts (which
+            # would prune the salt and collapse this back to one skewed shuffle)
+            .persist(StorageLevel.DISK_ONLY)
+        )
+        return (
+            salted_distinct
+            .drop("_salt")
             .distinct()
             .withColumn("isDisambiguous", f.lit(True))
         )
     
     @staticmethod
-    def _resolve_ambiguous_mappings(df: DataFrame, valid_id_df: DataFrame) -> MatchMapped:
+    def _resolve_ambiguous_mappings(
+        df: DataFrame,
+        valid_id_df: DataFrame,
+        salt_buckets: int = DISAMBIG_SALT_BUCKETS,
+    ) -> MatchMapped:
         """Resolve ambiguous mappings by using a dataframe of valid ids.
+
+        The left join key (pmid, mappedId) is Zipfian on full-EPMC mention data:
+        a handful of (pmid, mappedId) pairs account for a disproportionate share
+        of rows, which funnels each hot key onto a single shuffle partition and
+        creates extreme task-duration skew. To mitigate this we salt the left
+        side with a uniform random bucket, replicate the right side across all
+        salt buckets, and join on the salted key. Cardinality and semantics are
+        preserved because valid_id_df is already distinct on (pmid, mappedId).
 
         Args:
             df (DataFrame): DataFrame containing ambiguous mappings.
             valid_id_df (DataFrame): DataFrame containing only valid ids.
+            salt_buckets (int): Number of salt buckets used to spread hot
+                (pmid, mappedId) keys across shuffle partitions.
 
         Returns:
             MatchMapped: Dataset with resolved mappings.
         """
+        salted_df = df.withColumn(
+            "_salt", (f.rand(seed=42) * salt_buckets).cast("int")
+        )
+        salted_valid_id_df = valid_id_df.withColumn(
+            "_salt", f.explode(f.array(*[f.lit(i) for i in range(salt_buckets)]))
+        )
         return MatchMapped(
             _df=(
-                df
-                .join(valid_id_df, on=["pmid", "mappedId"], how="left")
+                salted_df
+                .join(salted_valid_id_df, on=["pmid", "mappedId", "_salt"], how="left")
+                .drop("_salt")
                 .withColumn("isDisambiguous", f.coalesce(f.col("isDisambiguous"), f.lit(False)))
                 .withColumn(
-                    "validReasons", 
+                    "validReasons",
                     MatchMapped._update_flag(
                         f.col("validReasons"),
                         (f.col("isDisambiguous") == True) & (f.col("isValid") == False),
