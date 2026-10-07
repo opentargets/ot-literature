@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from ontoma import spark_nlp_coordinate
 from pyspark.conf import SparkConf
 from pyspark.sql import SparkSession
 
@@ -33,7 +34,8 @@ class Session:
                 SparkConf()
                 .set("spark.driver.memory", "2g")
                 .set("spark.executor.memory", "8g")
-                .set("spark.jars.packages", "com.johnsnowlabs.nlp:spark-nlp_2.12:6.1.3")
+                # Spark NLP artifact matching the installed pyspark (Scala 2.12 for Spark 3, 2.13 for Spark 4)
+                .set("spark.jars.packages", spark_nlp_coordinate())
             )
 
         self.spark = (
