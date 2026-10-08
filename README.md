@@ -1,5 +1,11 @@
 # Open Targets Literature
 
+> [!IMPORTANT]
+> **This repository is archived.** Its code now lives in the Open Targets pipeline monorepo at
+> [`pts/src/pts/pyspark/literature_utils`](https://github.com/opentargets/pipeline/tree/main/pts/src/pts/pyspark/literature_utils),
+> moved in [opentargets/pipeline#130](https://github.com/opentargets/pipeline/pull/130). The pipeline was its only consumer.
+> Make changes there. The last release here is tag `0.1.1`.
+
 The improved Open Targets Literature Pipeline
 
 Here is an outline of the pipeline:
